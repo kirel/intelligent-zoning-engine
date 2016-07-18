@@ -1,5 +1,5 @@
 data/re_schulstand.geojson:
-	ogr2ogr -s_srs EPSG:25833 -t_srs EPSG:3857 -f geoJSON $@ WFS:"http://fbinter.stadt-berlin.de/fb/wfs/geometry/senstadt/re_schulstand" fis:re_schulstand
+	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ WFS:"http://fbinter.stadt-berlin.de/fb/wfs/geometry/senstadt/re_schulstand" fis:re_schulstand
 schulen: data/re_schulstand.geojson
 
 data/HKO_2015_EPSG5650.txt:
