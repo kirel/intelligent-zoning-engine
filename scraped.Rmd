@@ -1,0 +1,164 @@
+---
+title: "Scraped"
+output: html_notebook
+---
+
+```{r libs, include=F}
+library(readr)
+library(rgdal)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggmap)
+library(geosphere)
+library(purrr)
+#library(lawn)
+library(scales)
+library(ggrepel)
+library(osrm)
+library(knitr)
+```
+
+```{r}
+addresses = read_delim("HKO_2015_EPSG5650.txt", ';', locale = locale(encoding = "latin1")) %>%
+  mutate(EEEEEEEE_EEE=1.0*EEEEEEEE_EEE/1000.0, NNNNNNN_NNN=1.0*NNNNNNN_NNN/1000.0) %>%
+  select(OI, STN, HNR, PLZ, EEEEEEEE_EEE, NNNNNNN_NNN) %>%
+  distinct(STN, HNR, PLZ) %>%
+  as.data.frame()
+
+coordinates(addresses) = c('EEEEEEEE_EEE', 'NNNNNNN_NNN')
+proj4string(addresses) = CRS("+init=epsg:5650")
+
+addresses = spTransform(addresses, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+row.names(addresses) = addresses$OI
+
+box = bbox(addresses)
+
+addresses_df = addresses %>% as.data.frame() %>% rename(long=EEEEEEEE_EEE, lat=NNNNNNN_NNN) %>% select(OI, STN, HNR, PLZ, lat, long)
+```
+
+```{r}
+ggplot(addresses_df) + geom_point(aes(long, lat), size=0.01) + coord_map() + theme_void()
+```
+
+```{r}
+scraped = read_csv('result.csv') %>%
+  mutate(school_type=substr(school_id, 3, 3),
+         school_id=paste0(substr(school_id, 1, 2), substr(school_id, 4, 5)),
+         catchment_area_id=substr(area_text, 37-3, 37)) %>%
+  filter(school_type == 'G')
+```
+
+```{r}
+length(unique(scraped$catchment_area_id))
+unique(scraped$catchment_area_id)
+```
+
+```{r}
+scraped_school_assignments = addresses_df %>%
+  inner_join(select(scraped, STN, HNR, PLZ, school_id, catchment_area_id)) %>%
+  inner_join(select(schools_df, school_id, SCHULNAME, s_lat, s_long)) %>%
+  rowwise() %>%
+  mutate(air_dist=distHaversine(c(long, lat), c(s_long, s_lat)), way_id=paste(OI, school_id)) %>%
+  ungroup()
+```
+
+```{r, fig.height=12, fig.width=12}
+ggplot(scraped_school_assignments %>% sample_n(100000)) +
+  #geom_point(aes(long, lat, color=school_id), size=0.01) +
+    geom_path(aes(long, lat, group=group, order=order), size=0.1, color='gray', data = catchment_areas_df) +
+  geom_segment(aes(long, lat, xend=s_long, yend=s_lat, color=school_id), size=0.01) +
+  scale_color_manual(values=rep(rainbow(10), 100)) +
+  coord_map() +
+  theme_void() +
+  guides(color=F)
+```
+
+```{r, fig.height=12, fig.width=12}
+ggplot(scraped_school_assignments %>% sample_n(100000)) +
+  #geom_point(aes(long, lat, color=school_id), size=0.01) +
+    geom_path(aes(long, lat, group=group, order=order), size=0.1, color='gray', data = catchment_areas_df) +
+  geom_segment(aes(long, lat, xend=s_long, yend=s_lat, color=air_dist, size=air_dist)) +
+  scale_color_continuous(low='gray', high='red') +
+  scale_size_continuous(range=c(0.01,0.1)) +
+  coord_map() +
+  theme_void() +
+  guides(color=F, size=F)
+```
+
+
+```{r}
+scraped_school_assignments %>%
+  group_by(school_id) %>% top_n(3, air_dist) %>% ungroup() %>% arrange(desc(air_dist)) %>% View()
+```
+
+```{r}
+plot_school = function(the_school_id) {
+  data = scraped_school_assignments %>% filter(school_id==the_school_id)
+  
+  data_bbox = expand_bbox(bbox(rbind(select(data, long, lat), rename(select(data, s_long, s_lat), lat=s_lat, long=s_long)) %>% as.matrix()))
+  center = data_bbox %>% apply(1, mean)
+  larger_side = max(data_bbox[,'max'] - data_bbox[,'min'])
+  xy_min = center - larger_side
+  xy_max = center + larger_side
+  new_bbox = matrix(c(xy_min, xy_max), 2, 2, dimnames=list(c('x', 'y'), c('min', 'max')))
+
+  map = get_map(new_bbox, maptype = 'roadmap', zoom=11)
+
+  ggmap(map) +
+    geom_segment(aes(long, lat, xend=s_long, yend=s_lat, color=school_id), size=0.01, data=data) +
+    scale_color_manual(values=rep(rainbow(10), 100)) +
+    coord_map(xlim=new_bbox['x',], ylim=new_bbox['y',]) +
+    theme_void() +
+    guides(color=F)
+}
+```
+
+```{r}
+plot_school('0929')
+```
+
+```{r}
+plot_school('1031')
+```
+
+```{r}
+schools_df %>% filter(school_id=='1031')
+```
+
+```{r}
+scraped_school_assignments %>% filter(school_id=='1031') %>% View()
+```
+
+
+```{r}
+plot_school('0520')
+```
+
+## All the distances
+
+```{r}
+options(osrm.server = "http://localhost:5000/", osrm.profile = 'foot')
+```
+
+```{r}
+schools_for_table = schools_df %>% select(id=school_id, long=s_long, lat=s_lat)
+addresses_for_table = addresses_df %>% select(id=OI, long, lat)
+durations_1 = osrmTable(src=slice(addresses_for_table, 1:100000), 
+                        dst=schools_for_table)$durations
+durations_2 = osrmTable(src=slice(addresses_for_table, 100001:200000), 
+                        dst=schools_for_table)$durations
+durations_3 = osrmTable(src=slice(addresses_for_table, 200000:n()), 
+                        dst=schools_for_table)$durations
+
+durations = rbind(durations_1, durations_2, durations_3) %>% as.data.frame() %>% mutate(source=rownames(.)) %>% gather(dest, duration, -source)
+```
+
+```{r}
+pryr::object_size(durations)
+```
+
+```{r}
+rm(durations)
+```
+

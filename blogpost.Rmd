@@ -1,0 +1,311 @@
+---
+title: "Ways to school"
+output: html_notebook
+---
+
+```{r libs, include=F, warning=F}
+library(readr)
+library(rgdal)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggmap)
+library(geosphere)
+library(purrr)
+library(scales)
+library(ggrepel)
+library(osrm)
+library(knitr)
+```
+
+idalab has recently been involved in discussions around the improvement of government services with data science. In particular we were able to look into to way that children get assigned to primary schools based on where they live. It's astonishing how seemingly mundane probelms like that invole a lot of decisions that can be tackled with data. It's far from trivial how to define catchment areas of primary schools. And while there has probably been put a lot of thought into the present state, there is always room for improvement.
+
+So we got interested in how far we can go using only Open Data. This blog post is the beginning of an internal project to get familiar with the available data and to learn how we can use them and similar datasets in future projects.
+
+## Open Data
+
+Open Data has long been a neglected topic in German policy but recently it is getting more recognition from the governing parties leading to some breakthrough successes. After years of standing idle Germany finally is about to join the Open Government Partnership and the Minister of the Interior will [present a draft for an Open Data law as eraly as this September](http://www.handelsblatt.com/politik/deutschland/open-data-gesetz-union-und-spd-oeffnen-das-milliardengeschaeft-mit-daten/13840960.html). For idalab Open Data is of course a source to fuel our algorithms and models. Just recently we've given a workshop on how to use Open Data for predictive modeling at [Berlin Open Data Day](http://www.berlin.de/projektzukunft/networking-events/berlin-open-data-day/).
+
+In this particular case there is also quite some data available but as you will see, not all is rainbows and unicorns.
+
+This post will be limited to exploring essential Open Data sets that would be relevant to aid the re-definition of catchment areas. Expect to read more on this topic from us in the future.
+
+## Primary School Catchment Areas
+
+There there actually is a dataset of the catchment areas for primary schools in Berlin's Data Portal at
+[https://daten.berlin.de/datensaetze/grundschuleinzugsbereiche-geometrien-berlin-2012-mit-demographischen-merkmalen](https://daten.berlin.de/datensaetze/grundschuleinzugsbereiche-geometrien-berlin-2012-mit-demographischen-merkmalen). This dataset has some problems though as we'll see in a moment. But let's have a look first.
+
+```{bash}
+wget -nv https://www.statistik-berlin-brandenburg.de/opendata/ESB2012_WGS84_EWR2012-12.zip
+unzip ESB2012_WGS84_EWR2012-12.zip -d ESB2012_WGS84_EWR2012-12
+```
+
+To explore the datasets we are using R here. We mostly use Python for analysis and machine learning at idalab but R has some great libraries for data wrangling and visualization and also has nice capabilities to work this spatial data so we opted for R in this case.
+
+The catchment areas come in the form of a shape file which can be loaded into a `SpatialPolygonsDataFrame` like this:
+
+```{r}
+catchment_areas = readOGR('ESB2012_WGS84_EWR2012-12/ESB2012_WGS84_EWR2012-12.shp', layer='ESB2012_WGS84_EWR2012-12')
+catchment_areas = catchment_areas[,c("ID")]
+crs = CRS(proj4string(catchment_areas))
+row.names(catchment_areas) = as.character(catchment_areas$ID)
+plot(catchment_areas)
+```
+
+## Schools
+
+Coordinates of Schools in Berlin are also available and can be downloaded from [http://www.stadtentwicklung.berlin.de/geoinformation/fis-broker/](http://www.stadtentwicklung.berlin.de/geoinformation/fis-broker/).
+
+The easiest way to do this is using `ogr2ogr` from [`GDAL`](http://www.gdal.org/ogr2ogr.html). Here we are saving the data into a GeoJSON file.
+```{bash}
+ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON schulen.geojson WFS:"http://fbinter.stadt-berlin.de/fb/wfs/geometry/senstadt/re_schulstand" fis:re_schulstand
+```
+
+Now we can read it into a `SpatialPointsDataFrame` the same way we did with the shapefile previously. Note that we are reprojecting the data into the same coordinate reference system as the catchment areas, so that we can later join data without problems.
+
+```{r}
+schools = readOGR('schulen.geojson', layer = 'OGRGeoJSON')
+schools = schools[schools$SCHULART == 'Grundschule',]
+#schools = spTransform(schools, crs)
+schools_df = schools %>% as.data.frame() %>%
+  rename(s_long=coords.x1, s_lat=coords.x2) %>% filter(SCHULART == 'Grundschule') %>%
+  mutate(school_id=factor(gsub("G", "", spatial_name))) %>%
+  select(school_id, s_lat, s_long, SCHULNAME)
+```
+
+```{r}
+map = get_map('Berlin')
+```
+
+
+```{r}
+ggmap(map) + geom_point(aes(s_long, s_lat), data=schools_df)
+```
+
+## Mapping schools to catchment areas
+
+To see if we can work with this data, we first wanted to understand how shools map to catchment areas. Since every school has an identifier called `spatial_name` in the original dataset that we renamed to `school_id` and every catchment area also has an `ID` atribute of almost the right shape — just one letter in the `spatial_name` needs to be removed — it was obvious to join on this key. A resulting plot connecting every school (black dots) with it's matching catchment area polygon centroid (red dots) connecting though a dotted line looks like this:
+
+```{r, fig.height=10, fig.width=14, fig.cap="Wat"}
+catchment_areas = spTransform(catchment_areas, CRS(proj4string(schools)))
+bbox_catchment_areas = bbox(catchment_areas)
+
+catchment_area_centroids = coordinates(catchment_areas) %>% as.data.frame() %>% rename(long=V1, lat=V2)
+
+catchment_area_centroids_df = cbind(catchment_area_centroids, catchment_areas@data) %>% rename(school_id=ID)
+catchment_areas_df = fortify(catchment_areas)
+
+ggplot() +
+  geom_polygon(aes(long, lat, group=group, order=order), size=0.5, color='red', fill='white', data = catchment_areas_df) +
+  geom_segment(aes(x=long, y=lat, xend=s_long, yend=s_lat), size=0.5, alpha=0.6, linetype=2, color='black', data=inner_join(catchment_area_centroids_df, schools_df)) +
+  geom_point(aes(long, lat), size=0.5, color='red', data=catchment_area_centroids_df) +
+  geom_point(aes(s_long, s_lat), size=0.5, color='black', data=schools_df) +
+  scale_color_continuous(low='blue', high='red') +
+  coord_map() +
+  theme_void() +
+  guides(color=F)
+```
+
+
+But this looks a little odd especially in Berlin Mitte. There are a few dotted lines clearly crossing catchment area borders. We can visualize which schools don't fall into their own district, to get a better grasp of what's going on. We'll also visualize which schools don't have a corresponding catchment area as blue dots:
+
+```{r, fig.height=10, fig.width=14}
+schools_df$catchment_area_id = as.character(over(schools, catchment_areas)$ID)
+
+ggplot() +
+  geom_polygon(aes(long, lat, group=group, order=order), size=0.5, color='red', fill='white', data = catchment_areas_df) +
+
+  geom_point(aes(long, lat), size=0.5, color='red', data=catchment_area_centroids_df) +
+  geom_point(aes(s_long, s_lat), size=0.5, color='black', alpha=0.4, data=schools_df %>% filter(school_id==catchment_area_id)) +
+  
+  # shade
+  geom_rect(aes(xmin=X1,ymin=X2,xmax=X3,ymax=X4), fill='white', alpha=0.8, data=data.frame(matrix(bbox_catchment_areas, 1, 4))) +
+
+  # lines
+  geom_segment(aes(x=long, y=lat, xend=s_long, yend=s_lat), size=0.5, alpha=0.6, linetype=2, color='black', data=inner_join(catchment_area_centroids_df, schools_df) %>% filter(school_id!=catchment_area_id)) +
+  
+  # area centers
+  geom_point(aes(long, lat), size=0.5, color='red', data=inner_join(catchment_area_centroids_df, schools_df) %>% filter(school_id!=catchment_area_id)) +
+
+  # schools
+  geom_point(aes(s_long, s_lat), size=0.5, color='black', data=left_join(schools_df, catchment_area_centroids_df) %>% filter(!is.na(long) & school_id!=catchment_area_id)) +
+
+  # orphaned schools
+  geom_point(aes(s_long, s_lat), size=0.5, color='blue', data=left_join(schools_df, catchment_area_centroids_df) %>% filter(is.na(long))) +
+
+  scale_color_continuous(low='blue', high='red') +
+  coord_map() +
+  theme_void() +
+  guides(color=F)
+```
+
+A few schools are really on the border of their catchment area so they are caught by the algorithm as false positives. But especially in Mitte there is somethin rotten. A few lines just seem too long. Let's have an even closer look:
+
+```{r, fig.width=5, fig.height=5}
+schools_df_wrong_ca_df = left_join(schools_df, catchment_area_centroids_df) %>%
+  filter(!is.na(long) & school_id!=catchment_area_id) %>%
+  rowwise() %>%
+  mutate(air_dist=distHaversine(c(long, lat), c(s_long, s_lat))) %>%
+  filter(air_dist > 1500) %>%
+  ungroup()
+
+schools_df_wrong_ca_df %>%
+  ggplot() +
+    geom_polygon(aes(long, lat, group=group, order=order), size=0.5, color='red', fill='white', data = catchment_areas_df) +
+  
+  # shade
+  geom_rect(aes(xmin=X1,ymin=X2,xmax=X3,ymax=X4), fill='white', alpha=0.8, data=data.frame(matrix(bbox_catchment_areas, 1, 4))) +
+
+  # lines
+  geom_segment(aes(x=long, y=lat, xend=s_long, yend=s_lat), size=0.5, alpha=0.6, linetype=2, color='black') +
+  
+  # area centers
+  geom_point(aes(long, lat), size=0.5, color='red') +
+
+  # Schools
+  geom_point(aes(s_long, s_lat), size=0.5, color='black') +
+  geom_text_repel(aes(s_long, s_lat, label=SCHULNAME), size=2.6, color='black') +
+  coord_map(xlim=c(min(schools_df_wrong_ca_df$long)-0.01, max(schools_df_wrong_ca_df$long)+0.01), ylim=c(min(schools_df_wrong_ca_df$lat)-0.01, max(schools_df_wrong_ca_df$lat)+0.01)) +
+  theme_void() +
+  guides(color=F)
+```
+
+## Does Open Data get updated if reality changes?
+
+One thing that could have happened here is, that the world kept turning while the catchment areas dataset just started aging and not in a graceful way. But the locations of schools are also quite old. The last update happended in April 2013. Maybe there is something else going on. Also how should we handle all those schools where the ids don't match to catchment areas? This is can only be solved by talking to people in the know. What do we learn? Just having the data is not enough. Domain knowledge is crucial.
+
+## How do we move on?
+
+
+
+
+
+## Where do people live?
+
+The house coordinates in Berlin can be downloaded from http://www.stadtentwicklung.berlin.de/geoinformation/geodateninfrastruktur/de/geodienste/atom.shtml
+
+```{r}
+addresses = read_delim("HKO_2015_EPSG5650.txt", ';', locale = locale(encoding = "latin1")) %>%
+  mutate(EEEEEEEE_EEE=1.0*EEEEEEEE_EEE/1000.0, NNNNNNN_NNN=1.0*NNNNNNN_NNN/1000.0) %>%
+  select(OI, STN, HNR, PLZ, EEEEEEEE_EEE, NNNNNNN_NNN) %>%
+  distinct(STN, HNR, PLZ) %>%
+  as.data.frame()
+
+coordinates(addresses) = c('EEEEEEEE_EEE', 'NNNNNNN_NNN')
+proj4string(addresses) = CRS("+init=epsg:5650")
+
+addresses = spTransform(addresses, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+row.names(addresses) = addresses$OI
+
+box = bbox(addresses)
+
+addresses_df = addresses %>% as.data.frame() %>% rename(long=EEEEEEEE_EEE, lat=NNNNNNN_NNN) %>% select(OI, STN, HNR, PLZ, lat, long)
+```
+
+Now addresses look like this
+```{r}
+ggplot(addresses_df) + geom_point(aes(long, lat), size=0.01) + coord_map()
+```
+
+## Routes
+
+```{r}
+#school_assignments = over(addresses, catchment_areas, returnList = T)
+#length(map(school_assignments, nrow) %>% keep(~ . > 1)) # => 0
+school_assignments = over(addresses, catchment_areas)
+
+addresses_df = cbind(addresses_df, school_assignments) %>%
+  mutate(school_id=factor(as.character(ID), levels=schools_df$school_id))
+```
+
+```{r}
+ways = inner_join(addresses_df, schools_df, by=c("school_id")) %>%
+  #rowwise() %>%
+  #mutate(air_dist=distHaversine(c(long, lat), c(s_long, s_lat)), way_id=paste(OI, school_id, sep='_')) %>%
+  mutate(way_id=paste(OI, school_id, sep='_')) %>%
+  #ungroup() %>%
+  as.data.frame()
+```
+
+```{r}
+#trace(osrmRoute, edit=TRUE)
+```
+
+```{r}
+options(osrm.server = "http://localhost:5000/")
+osrmRoute(c("Foo",13.347015,52.536273), c("Bar",13.452759,52.545461), sp=TRUE)@data
+```
+
+## Random School
+
+Select a school, that has a catchment area and that is in that catchment area
+
+```{r}
+random_school = left_join(schools_df, catchment_area_centroids_df) %>% filter(!is.na(long) & school_id==catchment_area_id) %>% sample_n(1)
+kable(random_school)
+```
+
+
+```{r}
+routed_ways_school = ways %>% filter(school_id == random_school$school_id) %>% apply(1, function(row) {
+  osrmRoute(row[c('OI', 'long', 'lat')], row[c('school_id', 's_long', 's_lat')], sp=TRUE)
+}) %>% do.call(rbind, .)
+plot(routed_ways_school)
+```
+
+```{r}
+routed_ways_school_data = routed_ways_school@data %>% mutate(id=rownames(routed_ways_school@data))
+routed_ways_school_df = fortify(routed_ways_school) %>% inner_join(routed_ways_school_data) %>% inner_join(ways %>% rename(h_long=long, h_lat=lat), by=c("id"="way_id"))
+```
+
+
+```{r}
+data = routed_ways_school_df %>% arrange(desc(distance))
+data = data %>% mutate(group=as.character(group)) %>% mutate(group=match(group, unique(group)))
+
+max_dist = 10#max(routed_ways_school$distance)
+
+ggplot() +
+  geom_path(aes(long, lat, group=group, order=distance, color=distance, size=distance), data=data) +
+  geom_point(aes(s_long, s_lat), size=0.5, data=schools_df %>% filter(school_id == random_school$school_id)) +
+  scale_color_gradientn(colors=c('green', 'orange', 'red', 'red'), values=rescale(c(0,1.900,2.000,max_dist)), limits=c(0, max_dist)) +
+  scale_size_continuous(range=c(1,0.001)) +
+  coord_map() +
+  theme_void() +
+  #ggtitle(paste("Einzugsgebiet", random_school$SCHULNAME)) +
+  guides(color=F, size=F)
+```
+
+```{r}
+expand_bbox = function(bbox, buffer=0.1) {
+  bbox+matrix(c(-0.1*(bbox[,'max']-bbox[,'min']),0.1*(bbox[,'max']-bbox[,'min'])), 2, 2)
+}
+
+bbox_catchment_areas
+expand_bbox(bbox_catchment_areas)
+```
+
+```{r}
+area_bbox = expand_bbox(bbox(catchment_areas_df %>% filter(id == random_school$school_id) %>% select(long, lat) %>% as.matrix()))
+
+map = get_map(area_bbox, source='stamen', maptype = 'toner-lite')
+```
+
+
+```{r, fig.height=8, fig.width=12}
+ggmap(map, extent = "normal", maprange = F) +
+  #geom_rect(aes(xmin=X1,ymin=X2,xmax=X3,ymax=X4), fill='white', alpha=0.8, data=data.frame(matrix(bbox_catchment_areas, 1, 4))) +
+
+  geom_polygon(aes(long, lat, group=group, order=order), size=0.5, color=NA, fill='white', alpha=1, data = catchment_areas_df %>% filter(id != random_school$school_id)) +
+
+  geom_polygon(aes(long, lat, group=group, order=order), size=0.5, color='black', fill='white', alpha=0.0, data = catchment_areas_df %>% filter(id == random_school$school_id)) +
+
+  geom_path(aes(long, lat, group=group, order=distance, color=distance, size=distance), data=data) +
+  geom_point(aes(s_long, s_lat), size=0.5, data=schools_df %>% filter(school_id == random_school$school_id)) +
+  scale_color_gradientn(colors=c('green', 'orange', 'red', 'red'), values=rescale(c(0,1.900,2.000,max_dist)), limits=c(0, max_dist)) +
+  scale_size_continuous(range=c(1,0.001)) +
+  coord_map(xlim=area_bbox['x',], ylim=area_bbox['y',]) +
+  theme_void() +
+  #ggtitle(paste("Einzugsgebiet", random_school$SCHULNAME)) +
+  guides(color=F, size=F)
+```
