@@ -50,6 +50,13 @@ data/RBS_OD_BLK_2015_12.geojson:
 	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ data/RBS_OD_BLK_2015_12/RBS_OD_BLK_2015_12.shp
 	rm -rf data/RBS_OD_BLK_2015_12
 
+data/RBS_OD_BEZ_2015_12.geojson:
+	wget https://www.statistik-berlin-brandenburg.de/opendata/RBS_OD_BEZ_2015_12.zip -O data/RBS_OD_BEZ_2015_12.zip
+	unzip -o -d data/RBS_OD_BEZ_2015_12 data/RBS_OD_BEZ_2015_12.zip
+	rm data/RBS_OD_BEZ_2015_12.zip
+	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ data/RBS_OD_BEZ_2015_12/RBS_OD_BEZ_2015_12.shp
+	rm -rf data/RBS_OD_BEZ_2015_12
+
 # http://fbinter.stadt-berlin.de/fb/berlin/service.jsp?id=re_einwohnerdichte2015@senstadt&type=WFS&themeType=spatial
 data/re_einwohnerdichte2015.geojson:
 	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ WFS:"http://fbinter.stadt-berlin.de/fb/wfs/geometry/senstadt/re_einwohnerdichte2015" fis:re_einwohnerdichte2015
