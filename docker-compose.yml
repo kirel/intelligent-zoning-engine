@@ -1,0 +1,7 @@
+shiny:
+  build: .
+  volumes:
+    - ./tool:/srv/shiny-server/
+    - ./log/:/var/log/
+  ports:
+    - "3838:3838"
