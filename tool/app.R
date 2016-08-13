@@ -6,7 +6,10 @@ library(formattable)
 library(htmltools)
 library(purrr)
 library(colorspace)
+library(DT)
+options(shiny.autoreload=T)
 library(shiny)
+library(shinydashboard)
 
 # Load data
 solution = read_rds('init_solution.rds') %>% select(BLK, school)
@@ -19,7 +22,7 @@ school_ids = unique(as.character(schools$spatial_name))
 block_ids = unique(as.character(blocks$BLK))
 
 # Prepare data
-blocks$highlighted = F # on mouseover
+block_index = set_names(1:length(blocks$BLK), blocks$BLK) 
 blocks$selected = T # when the shool is selected
 blocks$updated = F
 schools$selected = T
@@ -38,14 +41,24 @@ desat <- function(cols, sat=0.5) {
 }
 
 ### UI
-ui <- fluidPage(
-  leafletOutput("map"),
-  inputPanel(
-    selectizeInput("selected_block", "Block", c('', block_ids)),
-    selectizeInput("selected_school", "Schule", c('', school_ids)),
-    actionButton("assign", "Zuordnen")
-  ),
-  formattableOutput("table")
+ui <- fillPage(
+  tags$head(tags$style(HTML(
+    "
+    #map-panel { height: calc(100% - 140px); }
+    #table-panel { height: 100%; overflow: scroll; }
+    "))),
+  fillRow(
+    div(
+      id='map-panel',
+      leafletOutput("map", width="100%", height='100%'),
+      uiOutput('school'),
+      uiOutput('block')
+    ),
+    div(
+      id='table-panel',
+      DT::dataTableOutput("table")
+    )
+  )
 )
 
 ### Server
@@ -53,21 +66,28 @@ server <- function(input, output, session) {
   
   ### Reactive Values
   
-  r <- reactiveValues(blocks=blocks, highlights=blocks[,], schools=schools, assignment_rev=0)
-  
-  reactive_schools = reactive(r$schools)
-
-  reactive_selected_schools = reactive(r$schools %>% filter(selected=T))
+  r <- reactiveValues(blocks=blocks, schools=schools, assignment_rev=0, selected_block='', selected_school='', previous_mouseover='')
   
   ### Interaction
   
   # block mouseover -> highlight the shape
-  observeEvent(input$map_shape_mouseover, {
+  observe({
     req(input$map_shape_mouseover$id)
-    if (grepl('block_', input$map_shape_mouseover$id)) {
+    if (input$map_shape_mouseover$id != isolate(r$previous_mouseover)) {
+      # run this again and only set selected block if we're over the same shape after 100ms
+      r$previous_mouseover = input$map_shape_mouseover$id
+      invalidateLater(100, session)
+    } else if (grepl('block_', input$map_shape_mouseover$id)) {
       # select the respective block
-      selected_block = sub('block_', '', input$map_shape_mouseover$id)
-      updateSelectInput(session, "selected_block", selected=selected_block)
+      r$selected_block = substring(input$map_shape_mouseover$id, 7)
+    }
+  })
+  
+  observeEvent(input$map_shape_mouseout, {
+    req(input$map_shape_mouseout$id)
+    if (grepl('block_', input$map_shape_mouseout$id)) {
+      # deselect the respective block
+      r$selected_block = ''
     }
   })
   
@@ -75,9 +95,18 @@ server <- function(input, output, session) {
   observeEvent(input$map_marker_click, {
     req(input$map_marker_click$id)
     clicked_marker = input$map_marker_click$id
-    selected_school = ifelse(clicked_marker == isolate(input$selected_school), '', clicked_marker)
-    updateSelectInput(session, "selected_school", selected=selected_school)
-    updateSelectInput(session, "selected_block", selected='')
+    r$selected_school = ifelse(clicked_marker == isolate(r$selected_school), '', clicked_marker)
+    r$selected_school_index = schools$spatial_name %>% detect_index(~ .x == r$selected_school) 
+    r$selected_block = ''
+  })
+  
+  observe({
+    row = input$table_rows_selected
+    isolate({
+      r$selected_school_index = row
+      r$selected_school = ifelse(is.null(row), '', schools$spatial_name[row])
+      r$selected_block = ''
+    })
   })
   
   # click on shapes -> update the solution
@@ -85,38 +114,20 @@ server <- function(input, output, session) {
     if (grepl('block_', input$map_shape_click$id)) {
       # a block was clicked
       clicked_block = sub('block_', '', input$map_shape_click$id)
-      updateSelectInput(session, "selected_block", selected=clicked_block)
+      r$selected_block = clicked_block
       # update the solution
-      currently_assigned_school = r$blocks[r$blocks$BLK == input$selected_block,]$school
-      r$blocks[r$blocks$BLK == input$selected_block, 'school'] = ifelse(is.na(currently_assigned_school) | input$selected_school != currently_assigned_school, input$selected_school, '')
+      currently_assigned_school = r$blocks[r$blocks$BLK == r$selected_block,]$school
+      r$blocks[r$blocks$BLK == r$selected_block, 'school'] = ifelse(is.na(currently_assigned_school) | r$selected_school != currently_assigned_school, r$selected_school, '')
       r$blocks$updated = F
-      r$blocks[r$blocks$BLK == input$selected_block, 'updated'] = T
-      r$blocks[r$blocks$BLK == input$selected_block, 'selected'] = T
+      r$blocks[r$blocks$BLK == r$selected_block, 'updated'] = T
+      r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
       r$assignment_rev = r$assignment_rev + 1
     }
   })
   
-  # click on button
-  observeEvent(input$assign, {
-    r$blocks[r$blocks$BLK == input$selected_block, 'school'] = input$selected_school
-    r$blocks$updated = F
-    r$blocks[r$blocks$BLK == input$selected_block, 'updated'] = T
-    r$blocks[r$blocks$BLK == input$selected_block, 'selected'] = T
-    r$assignment_rev = r$assignment_rev + 1
-  })
-  
-  # select block in select input
+  # school selection changed - update blocks
   observe({
-    selected_block = input$selected_block
-    isolate({
-      r$highlights$highlighted = F
-      r$highlights[r$highlights$BLK == selected_block, 'highlighted'] = T
-    })
-  })
-  
-  # select school in select input
-  observe({
-    selected_school = input$selected_school
+    selected_school = r$selected_school
     isolate({
       schools_selected_before = r$schools$selected
       r$schools$selected = selected_school == ''
@@ -170,8 +181,8 @@ server <- function(input, output, session) {
   
   # block highlight marker
   observe({
-    highlighted_block = r$blocks[r$highlights$highlighted==T,]
-    if (nrow(highlighted_block) == 1) {
+    if (r$selected_block != '') {
+      highlighted_block = r$blocks[block_index[r$selected_block],]
       leafletProxy("map") %>%
         addPolylines(data=highlighted_block, color='red', weight=4, layerId='highlighted_block') %>%
         addPolygons(
@@ -192,56 +203,103 @@ server <- function(input, output, session) {
   
   reactive_table_data = reactive({
     r$assignment_rev
-    data = isolate(r$blocks)
-    if (input$selected_block != '' & input$selected_school != '') {
-      data = data[,] 
-      data[data$BLK == input$selected_block, 'school'] = input$selected_school
-    } else if (input$selected_block != '') {
-      data = data[,] 
-      data[data$BLK == input$selected_block, 'school'] = ''
+    data = isolate(r$blocks) %>% as.data.frame() %>%
+      mutate(school=ifelse(is.na(school) | school == '', 'Keine', school))
+    
+    alternative = data
+    if (r$selected_block != '') {
+      currently_assigned_school = alternative[block_index[r$selected_block],]$school
+      alternative[block_index[r$selected_block], 'school'] = ifelse(is.na(currently_assigned_school) | r$selected_school != currently_assigned_school, r$selected_school, '')
+      alternative = alternative %>% mutate(school=ifelse(is.na(school) | school == '', 'Keine', school))
     }
-    data[is.na(data$school) | data$school == '', 'school'] = 'Keine'
-    data %>% as.data.frame() %>%
+    
+    table_data = data %>%
       left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       left_join(kids_in_blocks, by='BLK') %>%
       group_by(school) %>% summarise(
         kids=sum(num_kids, na.rm=T),
         num_blocks=n(),
-        min_time=min(min),
-        avg_time=mean((kids*avg)/sum(kids)),
-        max_time=max(max),
+        min_time=min(min, na.rm=T),
+        avg_time=mean((kids*avg)/sum(kids, na.rm=T), na.rm=T),
+        max_time=max(max, na.rm=T),
         Kapa=first(Kapa)
       ) %>%
       mutate(
         utilization=kids/Kapa
-      ) %>% select(
+      )
+
+    alternative_table_data = alternative %>%
+      left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
+      left_join(kids_in_blocks, by='BLK') %>%
+      group_by(school) %>% summarise(
+        kids=sum(num_kids, na.rm=T),
+        num_blocks=n(),
+        min_time=min(min, na.rm=T),
+        avg_time=mean((kids*avg)/sum(kids, na.rm=T), na.rm=T),
+        max_time=max(max, na.rm=T),
+        Kapa=first(Kapa)
+      ) %>%
+      mutate(
+        utilization=kids/Kapa
+      )
+    
+    diff = select(alternative_table_data, -school) - select(table_data, -school)
+
+    table_data['delta_utilization'] = diff$utilization
+    table_data %>%
+      select(
         Schule=school,
-        `Blöcke`=num_blocks,
         Kapazität=Kapa,
         Kinder=kids,
         Auslastung=utilization,
+        `Delta Ausl.`=delta_utilization,
         `Weg (min)`=min_time,
-        `Weg (Ø)`=avg_time,
+        `Weg (avg)`=avg_time,
         `Weg (max)`=max_time
       )
+    
   })
   
-  output$table = renderFormattable({
+  output$table = DT::renderDataTable({
     reactive_table_data() %>%
       formattable(
         list(
           Kinder = formatter("span", x ~ digits(x, 2)),
-          Auslastung = formatter("span",
-                                 style = x ~ style(color = ifelse(x < 1, "green", "red")),
-                                 x ~ icontext(ifelse(x < 1, "ok", "remove"), percent(x))
+          Auslastung = formatter(
+            "span",
+            style = x ~ style(color = ifelse(x < 1, "green", "red")),
+            x ~ icontext(ifelse(x < 1, "ok", "remove"), percent(x))
           ),
-          `Weg (Ø)` = proportion_bar("lightblue", na.rm = T),
+          `Delta Ausl.` = formatter(
+            "span",
+            x ~ icontext(ifelse(x == 0, "arrow-right", ifelse(x < 1, "arrow-down", "arrow-up")), percent(x))
+          ),
+          `Weg (avg)` = proportion_bar("lightblue", na.rm = T),
           `Weg (min)` = proportion_bar("lightblue", na.rm = T),
           `Weg (max)` = proportion_bar("lightblue", na.rm = T)
         )
+      ) %>% as.datatable(
+        options=c(list(paging = F, searching = F, stateSave = T, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))), isolate(input$table_state)),
+        selection=list(mode = 'single', selected = r$selected_school_index, target = 'row')
       )
+  }, server = F)
+  
+  # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
+  
+  # TODO dataTableProxy() selectRows() replaceData() https://rstudio.github.io/DT/shiny.html
+  
+  output$school = renderUI({
+    if (r$selected_school == '') {
+      div(h4('TODO'))
+    } else {
+      div(h4(r$selected_school))
+    }
   })
-
+  
+  output$block = renderUI({
+    div(h4(r$selected_block))
+  })
+  
 }
 
 shinyApp(ui, server)
