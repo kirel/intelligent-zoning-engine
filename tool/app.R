@@ -2,14 +2,11 @@ library(readr)
 library(dplyr)
 library(tidyr)
 library(leaflet)
-library(formattable)
 library(htmltools)
 library(purrr)
 library(colorspace)
 library(DT)
-options(shiny.autoreload=T)
 library(shiny)
-library(shinydashboard)
 
 # Load data
 solution = read_rds('init_solution.rds') %>% select(BLK, school)
@@ -22,7 +19,7 @@ school_ids = unique(as.character(schools$spatial_name))
 block_ids = unique(as.character(blocks$BLK))
 
 # Prepare data
-block_index = set_names(1:length(blocks$BLK), blocks$BLK) 
+block_index = set_names(1:length(blocks$BLK), blocks$BLK)
 blocks$selected = T # when the shool is selected
 blocks$updated = F
 schools$selected = T
@@ -46,11 +43,19 @@ ui <- fillPage(
     "
     #map-panel { height: calc(100% - 140px); }
     #table-panel { height: 100%; overflow: scroll; }
+    .capacity-ok { color: green; }
+    .capacity-ok .glyphicon-remove { display: none; }
+    .capacity-panic { color: red; }
+    .capacity-panic .glyphicon-ok { display: none; }
+    .change-up .glyphicon-arrow-down { display: none; }
+    .change-down .glyphicon-arrow-up { display: none; }
+    .no-change { color: transparent; }
     "))),
   fillRow(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
+      uiOutput('optimize'),
       uiOutput('school'),
       uiOutput('block')
     ),
@@ -63,13 +68,26 @@ ui <- fillPage(
 
 ### Server
 server <- function(input, output, session) {
-  
+
   ### Reactive Values
-  
-  r <- reactiveValues(blocks=blocks, schools=schools, assignment_rev=0, selected_block='', selected_school='', previous_mouseover='')
-  
+
+  r <- reactiveValues(
+    blocks=blocks, schools=schools,
+    assignment_rev=0,
+    selected_block='', selected_school='', selected_school_index=NULL,
+    running_optimization=FALSE,
+    previous_mouseover='')
+
   ### Interaction
   
+  observeEvent(input$optimize, {
+    if (r$running_optimization) {
+      r$running_optimization = FALSE
+    } else {
+      r$running_optimization = TRUE
+    }
+  })
+
   # block mouseover -> highlight the shape
   observe({
     req(input$map_shape_mouseover$id)
@@ -82,7 +100,7 @@ server <- function(input, output, session) {
       r$selected_block = substring(input$map_shape_mouseover$id, 7)
     }
   })
-  
+
   observeEvent(input$map_shape_mouseout, {
     req(input$map_shape_mouseout$id)
     if (grepl('block_', input$map_shape_mouseout$id)) {
@@ -90,16 +108,16 @@ server <- function(input, output, session) {
       r$selected_block = ''
     }
   })
-  
+
   # click on markers -> select school and blocks
   observeEvent(input$map_marker_click, {
     req(input$map_marker_click$id)
     clicked_marker = input$map_marker_click$id
     r$selected_school = ifelse(clicked_marker == isolate(r$selected_school), '', clicked_marker)
-    r$selected_school_index = schools$spatial_name %>% detect_index(~ .x == r$selected_school) 
+    r$selected_school_index = schools$spatial_name %>% detect_index(~ .x == r$selected_school)
     r$selected_block = ''
   })
-  
+
   observe({
     row = input$table_rows_selected
     isolate({
@@ -108,7 +126,7 @@ server <- function(input, output, session) {
       r$selected_block = ''
     })
   })
-  
+
   # click on shapes -> update the solution
   observeEvent(input$map_shape_click, {
     if (grepl('block_', input$map_shape_click$id)) {
@@ -124,7 +142,7 @@ server <- function(input, output, session) {
       r$assignment_rev = r$assignment_rev + 1
     }
   })
-  
+
   # school selection changed - update blocks
   observe({
     selected_school = r$selected_school
@@ -139,12 +157,12 @@ server <- function(input, output, session) {
       r$blocks$updated = r$blocks$updated | (r$blocks$selected != blocks_selected_before)
     })
   })
-  
+
   ### Update the UI
-  
+
   # Initial map render
   output$map <- renderLeaflet({
-    
+
     m <- leaflet() %>%
       addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
       addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
@@ -157,9 +175,9 @@ server <- function(input, output, session) {
         fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
         )
     m
-    
+
   })
-  
+
   # incremental map update
   observe({
     updated_blocks = r$blocks[r$blocks$updated,]
@@ -178,7 +196,7 @@ server <- function(input, output, session) {
     r$blocks$updated = F
     r$schools$updated = F
   })
-  
+
   # block highlight marker
   observe({
     if (r$selected_block != '') {
@@ -199,20 +217,118 @@ server <- function(input, output, session) {
     }
   })
   
-  ### table
+  ### optimization
   
+  observe({
+    if (r$running_optimization) {
+      invalidateLater(0, session)
+      isolate({
+        # if there is no population to iterate on
+        if (is.null(r$ga_population)) {
+          # take the current blocks as a seed
+          # select only blocks with stats and assign random schools for unassigned blocks
+          seed_individual = blocks %>% as.data.frame() %>%
+            filter(BLK %in% block_ids) %>%
+            select(BLK, school) %>%
+            mutate(school=sample(school_ids, nrow(.), replace = T))
+            #mutate(school=ifelse(is.na(school), sample(school_ids, length(is.na(school)), replace = T), school))
+          
+          # prepend it to the current population
+          r$ga_population = rep(list(seed_individual), 20) %>% map(ga_mutate)
+        } else {
+          # go just one evolutionary step
+          r$ga_population = ga_step(r$ga_population, fitness_f,
+                                    survival_fraction=0.5, mutation_fraction=0.1, mating_factor=1)
+          
+          fittest = r$ga_population[[1]]
+          cat('Fitness ', fitness_f(fittest), '\n', file=stderr())
+          cat('Polulation size ', length(r$ga_population), '\n', file=stderr())
+          
+          prev_schools = r$blocks$school
+          new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest) %>% .$school
+          r$blocks$school = new_schools
+          diff = r$blocks$school != prev_schools
+          r$blocks$updated = ifelse(is.na(diff), T, diff)
+        }
+      })
+    }
+  })
+  
+
+  # takes blocks spdf and returns new school assignments
+  school_ids = as.character(schools$spatial_name)
+  block_ids = unique(block_stats$BLK) # blocks with stats
+  
+  # An individual is an assignment data frame BLK->school
+  # every gene is an assignment BLK->school
+  
+  # randomly reassign a number of schools
+  ga_mutate = function(individual, fraction=0.01) {
+    num_mutations = fraction*nrow(individual)
+    individual[sample(1:nrow(individual), num_mutations), 'school'] = sample(school_ids, num_mutations, replace=T)
+    individual
+  }
+  
+  # randomly mix assignments from two individuals into one
+  ga_crossover = function(a, b) {
+    child = a[,]
+    fraction = runif(1)
+    num_genes_b = fraction*nrow(b)
+    b_genes = sample(1:nrow(b), num_genes_b)
+    child[b_genes, 'school'] = b[b_genes, 'school']
+    child
+  }
+  
+  # takes a list of individuals and breeds new ones in addition
+  # returns the new population (that includes the old one)
+  ga_breed = function(population, mutation_fraction=0.01, mating_factor=1) {
+    mate_a = sample(population, length(population)*mating_factor, replace = T)
+    mate_b = sample(population, length(population)*mating_factor, replace = T)
+    
+    c(population, map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction)))
+  }
+  
+  # selects the fittest individuals according to a fittness function
+  ga_select = function(population, fitness_f, survival_fraction=0.1, max_population=100) {
+    fitness = map(population, fitness_f)
+    num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
+    #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
+    survivors = sort_by(population, fitness_f)[1:num_survivors]
+    survivors
+  }
+  
+  # takes a populations, runs beeds and selects
+  ga_step = function(population, fittness_f, survival_fraction=0.5, mutation_fraction=0.05, mating_factor=1) {
+    ga_select(ga_breed(population, mutation_fraction, mating_factor), fittness_f, survival_fraction)
+  }
+  
+  ### 
+  
+  fitness_f = function(individual) {
+    OVER_CAPACITY_PENALTY = 100
+    individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
+      group_by(school) %>%
+      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg)) %>%
+      rowwise() %>% mutate(over_capacity=max(0, kids-Kapa)) %>% ungroup %>%
+      mutate(Kapa_penalty=over_capacity*OVER_CAPACITY_PENALTY) %>%
+      summarise(avg=sum(avg), Kapa_penalty=sum(Kapa_penalty)) %>%
+      mutate(fitness=avg+Kapa_penalty) %>% .$fitness
+  }
+
+  ### table
+
   reactive_table_data = reactive({
     r$assignment_rev
     data = isolate(r$blocks) %>% as.data.frame() %>%
       mutate(school=ifelse(is.na(school) | school == '', 'Keine', school))
-    
+
     alternative = data
     if (r$selected_block != '') {
       currently_assigned_school = alternative[block_index[r$selected_block],]$school
       alternative[block_index[r$selected_block], 'school'] = ifelse(is.na(currently_assigned_school) | r$selected_school != currently_assigned_school, r$selected_school, '')
       alternative = alternative %>% mutate(school=ifelse(is.na(school) | school == '', 'Keine', school))
     }
-    
+
     table_data = data %>%
       left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       left_join(kids_in_blocks, by='BLK') %>%
@@ -242,7 +358,7 @@ server <- function(input, output, session) {
       mutate(
         utilization=kids/Kapa
       )
-    
+
     diff = select(alternative_table_data, -school) - select(table_data, -school)
 
     table_data['delta_utilization'] = diff$utilization
@@ -252,42 +368,82 @@ server <- function(input, output, session) {
         Kapazität=Kapa,
         Kinder=kids,
         Auslastung=utilization,
-        `Delta Ausl.`=delta_utilization,
+        `ΔAusl.`=delta_utilization,
         `Weg (min)`=min_time,
-        `Weg (avg)`=avg_time,
+        `Weg (Ø)`=avg_time,
         `Weg (max)`=max_time
       )
-    
+
   })
   
-  output$table = DT::renderDataTable({
-    reactive_table_data() %>%
-      formattable(
-        list(
-          Kinder = formatter("span", x ~ digits(x, 2)),
-          Auslastung = formatter(
-            "span",
-            style = x ~ style(color = ifelse(x < 1, "green", "red")),
-            x ~ icontext(ifelse(x < 1, "ok", "remove"), percent(x))
-          ),
-          `Delta Ausl.` = formatter(
-            "span",
-            x ~ icontext(ifelse(x == 0, "arrow-right", ifelse(x < 1, "arrow-down", "arrow-up")), percent(x))
-          ),
-          `Weg (avg)` = proportion_bar("lightblue", na.rm = T),
-          `Weg (min)` = proportion_bar("lightblue", na.rm = T),
-          `Weg (max)` = proportion_bar("lightblue", na.rm = T)
-        )
-      ) %>% as.datatable(
-        options=c(list(paging = F, searching = F, stateSave = T, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))), isolate(input$table_state)),
-        selection=list(mode = 'single', selected = r$selected_school_index, target = 'row')
+  ### Outputs
+
+  
+  rowCallback = DT::JS("function(row, data) {",
+"
+  if (data[4]+data[5] > 1) {
+    $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+  } else {
+    $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
+  }
+
+  if (data[5] > 0) {
+    $('td:eq(5)', row).addClass('change-up').removeClass('change-down').removeClass('no-change');
+  } else if (data[5] < 0) {
+    $('td:eq(5)', row).addClass('change-down').removeClass('change-up').removeClass('no-change');
+  } else {
+    $('td:eq(5)', row).addClass('no-change').removeClass('change-down').removeClass('change-up');
+  }
+
+  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')
+  $('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
+",
+  "}")
+  
+  output$table = renderDataTable({
+    data = isolate(reactive_table_data())
+    data %>% datatable(
+        options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
+        selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
+      ) %>%
+      formatPercentage(c('Auslastung', 'ΔAusl.'), digits = 2) %>%
+      formatRound(c('Kinder', 'Weg (min)', 'Weg (max)', 'Weg (Ø)')) %>%
+      formatStyle(
+        'Weg (Ø)',
+        background = styleColorBar(data$`Weg (Ø)`, 'lightskyblue'),
+        backgroundSize = '92% 80%',
+        backgroundRepeat = 'no-repeat',
+        backgroundPosition = 'center'
+      ) %>%
+      formatStyle(
+        'Weg (min)',
+        background = styleColorBar(data$`Weg (min)`, 'wheat'),
+        backgroundSize = '92% 80%',
+        backgroundRepeat = 'no-repeat',
+        backgroundPosition = 'center'
+      ) %>%
+      formatStyle(
+        'Weg (max)',
+        background = styleColorBar(data$`Weg (max)`, 'coral'),
+        backgroundSize = '92% 80%',
+        backgroundRepeat = 'no-repeat',
+        backgroundPosition = 'center'
       )
-  }, server = F)
-  
+
+  }, server = T)
+
+  tableProxy = DT::dataTableProxy('table')
+
+  observe({
+    tableProxy %>% replaceData(reactive_table_data(), clearSelection='none')
+  })
+
+  observe({
+    tableProxy %>% selectRows(r$selected_school_index)
+  })
+
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
-  
-  # TODO dataTableProxy() selectRows() replaceData() https://rstudio.github.io/DT/shiny.html
-  
+
   output$school = renderUI({
     if (r$selected_school == '') {
       div(h4('TODO'))
@@ -295,12 +451,15 @@ server <- function(input, output, session) {
       div(h4(r$selected_school))
     }
   })
-  
+
   output$block = renderUI({
     div(h4(r$selected_block))
   })
   
+  output$optimize = renderUI({
+    actionButton('optimize', label = ifelse(r$running_optimization, 'Stop optimization', 'Run optimization'))
+  })
+
 }
 
 shinyApp(ui, server)
-
