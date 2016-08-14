@@ -19,6 +19,20 @@ school_ids = unique(as.character(schools$spatial_name))
 block_ids = unique(as.character(blocks$BLK))
 
 # Prepare data
+# takes blocks spdf and returns new school assignments
+school_ids = as.character(schools$spatial_name)
+block_ids = unique(as.character(block_stats$BLK)) # blocks with stats
+
+# An individual is an assignment data frame BLK->school
+# every gene is an assignment BLK->school
+
+distance_sample_weights = block_ids %>% map(function(block_id) {
+  idx = block_stats$BLK == block_id
+  avg = block_stats[idx,]$avg
+  school = block_stats[idx,]$dst
+  set_names(1/exp(avg)/sum(1/exp(avg)), school)
+}) %>% set_names(block_ids)
+
 block_index = set_names(1:length(blocks$BLK), blocks$BLK)
 blocks$selected = T # when the shool is selected
 blocks$updated = F
@@ -41,7 +55,7 @@ desat <- function(cols, sat=0.5) {
 ui <- fillPage(
   tags$head(tags$style(HTML(
     "
-    #map-panel { height: calc(100% - 140px); }
+    #map-panel { height: calc(100% - 240px); }
     #table-panel { height: 100%; overflow: scroll; }
     .capacity-ok { color: green; }
     .capacity-ok .glyphicon-remove { display: none; }
@@ -56,8 +70,10 @@ ui <- fillPage(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
       uiOutput('optimize'),
-      uiOutput('school'),
-      uiOutput('block')
+      #uiOutput('school'),
+      #uiOutput('block'),
+      actionButton('randomize', 'Randomisieren'),
+      plotOutput('fitness', height = '150px')
     ),
     div(
       id='table-panel',
@@ -140,6 +156,8 @@ server <- function(input, output, session) {
       r$blocks[r$blocks$BLK == r$selected_block, 'updated'] = T
       r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
       r$assignment_rev = r$assignment_rev + 1
+      
+      add_current_to_ga_population()
     }
   })
 
@@ -219,61 +237,83 @@ server <- function(input, output, session) {
   
   ### optimization
   
+  # Randomize (to test optimization)
+  observeEvent(input$randomize, {
+    random = blocks %>% as.data.frame() %>%
+      filter(BLK %in% block_ids) %>%
+      select(BLK, school) %>%
+      mutate(school=sample(school_ids, nrow(.), replace = T))
+    
+    new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(random) %>% .$school
+    r$blocks$school = new_schools
+    r$blocks$updated = T
+    
+    r$ga_population = list(random)
+    
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  add_current_to_ga_population = function() {
+    # select only blocks with stats and assign random schools for unassigned blocks
+    current = r$blocks %>% as.data.frame() %>%
+      filter(BLK %in% block_ids) %>%
+      select(BLK, school) %>%
+      mutate(school=ifelse(is.na(school), sample(school_ids, length(is.na(school)), replace = T), school))
+    
+    r$ga_population = list(current)
+  }
+  
   observe({
     if (r$running_optimization) {
       invalidateLater(0, session)
       isolate({
         # if there is no population to iterate on
         if (is.null(r$ga_population)) {
-          # take the current blocks as a seed
-          # select only blocks with stats and assign random schools for unassigned blocks
-          seed_individual = blocks %>% as.data.frame() %>%
-            filter(BLK %in% block_ids) %>%
-            select(BLK, school) %>%
-            mutate(school=sample(school_ids, nrow(.), replace = T))
-            #mutate(school=ifelse(is.na(school), sample(school_ids, length(is.na(school)), replace = T), school))
-          
-          # prepend it to the current population
-          r$ga_population = rep(list(seed_individual), 20) %>% map(ga_mutate)
-        } else {
-          # go just one evolutionary step
-          r$ga_population = ga_step(r$ga_population, fitness_f,
-                                    survival_fraction=0.5, mutation_fraction=0.1, mating_factor=1)
-          
-          fittest = r$ga_population[[1]]
-          cat('Fitness ', fitness_f(fittest), '\n', file=stderr())
-          cat('Polulation size ', length(r$ga_population), '\n', file=stderr())
-          
-          prev_schools = r$blocks$school
-          new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest) %>% .$school
-          r$blocks$school = new_schools
-          diff = r$blocks$school != prev_schools
-          r$blocks$updated = ifelse(is.na(diff), T, diff)
+          add_current_to_ga_population()
         }
+        # go some evolutionary steps
+        for (step in 1:1) {
+          r$ga_population = ga_step(r$ga_population, fitness_f,
+                                    survival_fraction=0.5, mutation_fraction=0.5, mating_factor=2)
+        }
+        
+        fittest = r$ga_population[[1]]
+        r$fittest_fitness = c(r$fittest_fitness, fitness_f(fittest))
+        
+        prev_schools = r$blocks$school
+        new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest) %>% .$school
+        r$blocks$school = new_schools
+        diff = r$blocks$school != prev_schools
+        r$blocks$updated = ifelse(is.na(diff), T, diff)
+        
+        r$assignment_rev = r$assignment_rev + 1
       })
     }
   })
   
-
-  # takes blocks spdf and returns new school assignments
-  school_ids = as.character(schools$spatial_name)
-  block_ids = unique(block_stats$BLK) # blocks with stats
+  output$fitness = renderPlot({
+    ggplot() + geom_line(aes(x=seq_along(r$fittest_fitness), y=r$fittest_fitness)) +
+      expand_limits(y=0)
+  })
   
-  # An individual is an assignment data frame BLK->school
-  # every gene is an assignment BLK->school
   
   # randomly reassign a number of schools
-  ga_mutate = function(individual, fraction=0.01) {
-    num_mutations = fraction*nrow(individual)
-    individual[sample(1:nrow(individual), num_mutations), 'school'] = sample(school_ids, num_mutations, replace=T)
+  ga_mutate = function(individual, fraction=0.05) {
+    num_mutations = ceiling(fraction*nrow(individual))
+    mutation_idx = sample(1:nrow(individual), num_mutations)
+    mutation_blks = as.character(individual[mutation_idx, 'BLK'])
+    # sample weighted by distance to each school
+    mutations = mutation_blks %>% map(~ sample(names(distance_sample_weights[[.x]]), 1, replace=T, prob=distance_sample_weights[[.x]]))
+    individual[mutation_idx, 'school'] = unlist(mutations)
     individual
   }
   
   # randomly mix assignments from two individuals into one
+  # TODO only where they are different
   ga_crossover = function(a, b) {
     child = a[,]
     fraction = runif(1)
-    num_genes_b = fraction*nrow(b)
+    num_genes_b = ceiling(fraction*nrow(b))
     b_genes = sample(1:nrow(b), num_genes_b)
     child[b_genes, 'school'] = b[b_genes, 'school']
     child
@@ -285,15 +325,21 @@ server <- function(input, output, session) {
     mate_a = sample(population, length(population)*mating_factor, replace = T)
     mate_b = sample(population, length(population)*mating_factor, replace = T)
     
+    cat('Mating', length(mate_a), 'pairs\n', file=stderr())
+    
     c(population, map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction)))
   }
   
-  # selects the fittest individuals according to a fittness function
+  # selects the fittest individuals according to a fitness function
   ga_select = function(population, fitness_f, survival_fraction=0.1, max_population=100) {
-    fitness = map(population, fitness_f)
+    cat('Population size', length(population), '\n', file=stderr())
+    population = sort_by(population, fitness_f)
     num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
+    cat('Keeping', num_survivors, 'survivors\n', file=stderr())
     #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
-    survivors = sort_by(population, fitness_f)[1:num_survivors]
+    survivors = population[1:num_survivors]
+    fitness = map(survivors, fitness_f) # FIXME remove!
+    cat('Survivor fitness', unlist(fitness), '\n', file=stderr())
     survivors
   }
   
@@ -305,13 +351,20 @@ server <- function(input, output, session) {
   ### 
   
   fitness_f = function(individual) {
-    OVER_CAPACITY_PENALTY = 100
+    OVER_CAPACITY_PENALTY = 0.5
     individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       group_by(school) %>%
       summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg)) %>%
       rowwise() %>% mutate(over_capacity=max(0, kids-Kapa)) %>% ungroup %>%
-      mutate(Kapa_penalty=over_capacity*OVER_CAPACITY_PENALTY) %>%
+      mutate(Kapa_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2) %>%
       summarise(avg=sum(avg), Kapa_penalty=sum(Kapa_penalty)) %>%
+      (function(x) {
+        if (runif(1)<0.01) {
+          cat('Distance error:', x$avg, '\n', file=stderr())
+          cat('Kapa error:', x$Kapa_penalty, '\n', file=stderr())
+        }
+        x
+      }) %>%
       mutate(fitness=avg+Kapa_penalty) %>% .$fitness
   }
 
