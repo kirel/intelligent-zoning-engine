@@ -6,7 +6,10 @@ library(htmltools)
 library(purrr)
 library(colorspace)
 library(DT)
+library(ggplot2)
 library(shiny)
+
+options(shiny.autoreload=T)
 
 # Load data
 solution = read_rds('init_solution.rds') %>% select(BLK, school)
@@ -70,9 +73,9 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
-      uiOutput('optimize'),
-      #uiOutput('school'),
+      uiOutput('school'),
       #uiOutput('block'),
+      uiOutput('optimize', inline = TRUE),
       actionButton('randomize', 'Randomisieren'),
       plotOutput('fitness', height = '150px')
     ),
@@ -267,19 +270,24 @@ server <- function(input, output, session) {
   
   observe({
     if (r$running_optimization) {
-      invalidateLater(0, session)
+      cat(file=stderr(), 'Running optimization\n')
       isolate({
         # if there is no population to iterate on
         if (is.null(r$ga_population)) {
           add_current_to_ga_population()
         }
         # go some evolutionary steps
-        for (step in 1:1) {
+        steps = 4
+        if (r$optimization_step %% steps == 0) 
           # do a step with only mutation
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.2, mating_factor=1), fitness_f, survival_fraction=0.5, max_population = 20)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.5, mating_factor=0), fitness_f, survival_fraction=1, max_population = 10)
+        else if (r$optimization_step %% 4 == 1)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.1, mating_factor=0), fitness_f, survival_fraction=1, max_population = 10)
+        else if (r$optimization_step %% 4 == 2)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.01, mating_factor=0), fitness_f, survival_fraction=1, max_population = 10)
+        else if (r$optimization_step %% 4 == 3) 
           # do a step with only crossover
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0, mating_factor=2), fitness_f, survival_fraction=0.5, max_population = 20)
-        }
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0, mating_factor=2), fitness_f, survival_fraction=1, max_population = 10)
         
         fittest = r$ga_population[[1]]
         r$fittest_fitness = c(r$fittest_fitness, fitness_f(fittest))
@@ -290,13 +298,17 @@ server <- function(input, output, session) {
         r$blocks$updated = r$blocks$school != prev_schools
         
         r$assignment_rev = r$assignment_rev + 1
+        r$optimization_step = r$optimization_step + 1
       })
+      invalidateLater(500, session)
+    } else {
+      r$optimization_step = 0
     }
   })
   
   output$fitness = renderPlot({
     ggplot() + geom_line(aes(x=seq_along(r$fittest_fitness), y=r$fittest_fitness)) +
-      expand_limits(y=0)
+      expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
   
   # randomly reassign a number of schools
@@ -508,9 +520,10 @@ server <- function(input, output, session) {
 
   output$school = renderUI({
     if (r$selected_school == '') {
-      div(h4('TODO'))
+      div(h4('Keine Schule ausgewählt'))
     } else {
-      div(h4(r$selected_school))
+      school = schools %>% filter(spatial_name == r$selected_school)
+      div(h4(paste(r$selected_school, school$SCHULNAME)))
     }
   })
 
@@ -519,7 +532,7 @@ server <- function(input, output, session) {
   })
   
   output$optimize = renderUI({
-    actionButton('optimize', label = ifelse(r$running_optimization, 'Stop optimization', 'Run optimization'))
+    actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
 
 }
