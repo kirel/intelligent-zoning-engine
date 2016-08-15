@@ -19,6 +19,7 @@ school_ids = unique(as.character(schools$spatial_name))
 block_ids = unique(as.character(blocks$BLK))
 
 # Prepare data
+blocks[is.na(blocks$school),'school'] = ''
 # takes blocks spdf and returns new school assignments
 school_ids = as.character(schools$spatial_name)
 block_ids = unique(as.character(block_stats$BLK)) # blocks with stats
@@ -30,7 +31,7 @@ distance_sample_weights = block_ids %>% map(function(block_id) {
   idx = block_stats$BLK == block_id
   avg = block_stats[idx,]$avg
   school = block_stats[idx,]$dst
-  set_names(1/exp(avg)/sum(1/exp(avg)), school)
+  set_names(1/exp(avg^3)/sum(1/exp(avg^3)), school)
 }) %>% set_names(block_ids)
 
 block_index = set_names(1:length(blocks$BLK), blocks$BLK)
@@ -130,7 +131,8 @@ server <- function(input, output, session) {
     req(input$map_marker_click$id)
     clicked_marker = input$map_marker_click$id
     r$selected_school = ifelse(clicked_marker == isolate(r$selected_school), '', clicked_marker)
-    r$selected_school_index = schools$spatial_name %>% detect_index(~ .x == r$selected_school)
+    index = schools$spatial_name %>% detect_index(~ .x == r$selected_school)
+    if (is.null(index) | index == 0) r$selected_school_index = NULL else r$selected_school_index = index
     r$selected_block = ''
   })
 
@@ -151,7 +153,7 @@ server <- function(input, output, session) {
       r$selected_block = clicked_block
       # update the solution
       currently_assigned_school = r$blocks[r$blocks$BLK == r$selected_block,]$school
-      r$blocks[r$blocks$BLK == r$selected_block, 'school'] = ifelse(is.na(currently_assigned_school) | r$selected_school != currently_assigned_school, r$selected_school, '')
+      r$blocks[r$blocks$BLK == r$selected_block, 'school'] = ifelse(r$selected_school != currently_assigned_school, r$selected_school, '')
       r$blocks$updated = F
       r$blocks[r$blocks$BLK == r$selected_block, 'updated'] = T
       r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
@@ -171,7 +173,7 @@ server <- function(input, output, session) {
       r$schools$updated = r$schools$updated | (r$schools$selected != schools_selected_before)
       blocks_selected_before = r$blocks$selected
       r$blocks$selected = selected_school == ''
-      r$blocks[!is.na(r$blocks$school) & r$blocks$school == selected_school, 'selected'] = T
+      r$blocks[r$blocks$school == selected_school, 'selected'] = T
       r$blocks$updated = r$blocks$updated | (r$blocks$selected != blocks_selected_before)
     })
   })
@@ -245,7 +247,7 @@ server <- function(input, output, session) {
       mutate(school=sample(school_ids, nrow(.), replace = T))
     
     new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(random) %>% .$school
-    r$blocks$school = new_schools
+    r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
     r$blocks$updated = T
     
     r$ga_population = list(random)
@@ -255,10 +257,10 @@ server <- function(input, output, session) {
   
   add_current_to_ga_population = function() {
     # select only blocks with stats and assign random schools for unassigned blocks
-    current = r$blocks %>% as.data.frame() %>%
+    current = blocks %>% as.data.frame() %>%
       filter(BLK %in% block_ids) %>%
-      select(BLK, school) %>%
-      mutate(school=ifelse(is.na(school), sample(school_ids, length(is.na(school)), replace = T), school))
+      select(BLK) %>% left_join(r$blocks %>% as.data.frame() %>% select(BLK, school), by='BLK') %>%
+      mutate(school=ifelse(school == '', sample(school_ids, length(is.na(school)), replace = T), school))
     
     r$ga_population = list(current)
   }
@@ -273,8 +275,10 @@ server <- function(input, output, session) {
         }
         # go some evolutionary steps
         for (step in 1:1) {
-          r$ga_population = ga_step(r$ga_population, fitness_f,
-                                    survival_fraction=0.5, mutation_fraction=0.5, mating_factor=2)
+          # do a step with only mutation
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.2, mating_factor=1), fitness_f, survival_fraction=0.5, max_population = 20)
+          # do a step with only crossover
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0, mating_factor=2), fitness_f, survival_fraction=0.5, max_population = 20)
         }
         
         fittest = r$ga_population[[1]]
@@ -282,9 +286,8 @@ server <- function(input, output, session) {
         
         prev_schools = r$blocks$school
         new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest) %>% .$school
-        r$blocks$school = new_schools
-        diff = r$blocks$school != prev_schools
-        r$blocks$updated = ifelse(is.na(diff), T, diff)
+        r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
+        r$blocks$updated = r$blocks$school != prev_schools
         
         r$assignment_rev = r$assignment_rev + 1
       })
@@ -296,13 +299,17 @@ server <- function(input, output, session) {
       expand_limits(y=0)
   })
   
-  
   # randomly reassign a number of schools
   ga_mutate = function(individual, fraction=0.05) {
     num_mutations = ceiling(fraction*nrow(individual))
-    mutation_idx = sample(1:nrow(individual), num_mutations)
+    # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
+    cost = individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
+      transmute(cost=avg^2/sum(avg^2)) %>% .$cost
+    #cost = rep(1, nrow(individual))
+    #cost = 1-cost
+    mutation_idx = sample(1:nrow(individual), num_mutations, prob = cost)
     mutation_blks = as.character(individual[mutation_idx, 'BLK'])
-    # sample weighted by distance to each school
+    # preferrably select schools closer to the block
     mutations = mutation_blks %>% map(~ sample(names(distance_sample_weights[[.x]]), 1, replace=T, prob=distance_sample_weights[[.x]]))
     individual[mutation_idx, 'school'] = unlist(mutations)
     individual
@@ -312,9 +319,12 @@ server <- function(input, output, session) {
   # TODO only where they are different
   ga_crossover = function(a, b) {
     child = a[,]
+    # only select from genes that are different
+    difference = a$school != b$school
+    if (sum(difference)==0) return(child)
     fraction = runif(1)
-    num_genes_b = ceiling(fraction*nrow(b))
-    b_genes = sample(1:nrow(b), num_genes_b)
+    num_genes_b = ceiling(fraction*sum(difference))
+    b_genes = sample((1:nrow(b))[difference], num_genes_b)
     child[b_genes, 'school'] = b[b_genes, 'school']
     child
   }
@@ -327,7 +337,8 @@ server <- function(input, output, session) {
     
     cat('Mating', length(mate_a), 'pairs\n', file=stderr())
     
-    c(population, map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction)))
+    # original population, mutated population and mated population
+    c(population, map(population, ~ ga_mutate(.x, mutation_fraction)) ,map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction)))
   }
   
   # selects the fittest individuals according to a fitness function
@@ -343,29 +354,27 @@ server <- function(input, output, session) {
     survivors
   }
   
-  # takes a populations, runs beeds and selects
-  ga_step = function(population, fittness_f, survival_fraction=0.5, mutation_fraction=0.05, mating_factor=1) {
-    ga_select(ga_breed(population, mutation_fraction, mating_factor), fittness_f, survival_fraction)
-  }
-  
   ### 
   
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 0.5
+    UNDER_CAPACITY_PENALTY = 0.3
     individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       group_by(school) %>%
-      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg)) %>%
-      rowwise() %>% mutate(over_capacity=max(0, kids-Kapa)) %>% ungroup %>%
-      mutate(Kapa_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2) %>%
-      summarise(avg=sum(avg), Kapa_penalty=sum(Kapa_penalty)) %>%
+      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2)) %>%
+      #summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2*kids)) %>%
+      rowwise() %>% mutate(over_capacity=max(1, kids-Kapa), under_capacity=max(1, Kapa-kids)) %>% ungroup %>%
+      mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
+      summarise(avg=sum(avg), over_capacity_penalty=sum(over_capacity_penalty), under_capacity_penalty=sum(under_capacity_penalty)) %>%
       (function(x) {
         if (runif(1)<0.01) {
           cat('Distance error:', x$avg, '\n', file=stderr())
-          cat('Kapa error:', x$Kapa_penalty, '\n', file=stderr())
+          cat('Over capacity error:', x$over_capacity_penalty, '\n', file=stderr())
+          cat('Under capacity error:', x$under_capacity_penalty, '\n', file=stderr())
         }
         x
       }) %>%
-      mutate(fitness=avg+Kapa_penalty) %>% .$fitness
+      mutate(fitness=0.2*avg+1*over_capacity_penalty+1*under_capacity_penalty) %>% .$fitness
   }
 
   ### table
@@ -373,13 +382,13 @@ server <- function(input, output, session) {
   reactive_table_data = reactive({
     r$assignment_rev
     data = isolate(r$blocks) %>% as.data.frame() %>%
-      mutate(school=ifelse(is.na(school) | school == '', 'Keine', school))
+      mutate(school=ifelse(school == '', 'Keine', school))
 
     alternative = data
     if (r$selected_block != '') {
       currently_assigned_school = alternative[block_index[r$selected_block],]$school
-      alternative[block_index[r$selected_block], 'school'] = ifelse(is.na(currently_assigned_school) | r$selected_school != currently_assigned_school, r$selected_school, '')
-      alternative = alternative %>% mutate(school=ifelse(is.na(school) | school == '', 'Keine', school))
+      alternative[block_index[r$selected_block], 'school'] = ifelse(r$selected_school != currently_assigned_school, r$selected_school, '')
+      alternative = alternative %>% mutate(school=ifelse(school == '', 'Keine', school))
     }
 
     table_data = data %>%
