@@ -5,3 +5,5 @@ shiny:
     - ./log/:/var/log/
   ports:
     - "3838:3838"
+  environment:
+    - "SHINY_LOG_LEVEL=TRACE"
