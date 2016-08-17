@@ -50,6 +50,13 @@ data/RBS_OD_BLK_2015_12.geojson:
 	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ data/RBS_OD_BLK_2015_12/RBS_OD_BLK_2015_12.shp
 	rm -rf data/RBS_OD_BLK_2015_12
 
+data/RBS_OD_LOR_2015_12.geojson:
+	wget https://www.statistik-berlin-brandenburg.de/opendata/RBS_OD_LOR_2015_12.zip -O data/RBS_OD_LOR_2015_12.zip
+	unzip -o -d data/RBS_OD_LOR_2015_12 data/RBS_OD_LOR_2015_12.zip
+	rm data/RBS_OD_LOR_2015_12.zip
+	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ data/RBS_OD_LOR_2015_12/RBS_OD_LOR_2015_12.shp
+	rm -rf data/RBS_OD_LOR_2015_12
+
 data/RBS_OD_BEZ_2015_12.geojson:
 	wget https://www.statistik-berlin-brandenburg.de/opendata/RBS_OD_BEZ_2015_12.zip -O data/RBS_OD_BEZ_2015_12.zip
 	unzip -o -d data/RBS_OD_BEZ_2015_12 data/RBS_OD_BEZ_2015_12.zip
@@ -66,6 +73,9 @@ einwohner: data/EWR201512E_Matrix.csv data/re_einwohnerdichte2015.geojson
 data/Schuldaten2015.csv:
 	wget https://raw.githubusercontent.com/ini20/berliner-schulen/master/data/Schuldaten2015.csv -O $@
 
+data/anmeldezahlen.csv:
+	wget https://docs.google.com/spreadsheet/ccc\?key\=1iAGbTdYcC55A6sDXpOnD3y-s8b4b6wJdSS-GkW_iIr0\&output\=csv -O $@
+
 # osm
 osm/berlin-latest.osm.pbf:
 	wget http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf -O $@
@@ -77,7 +87,7 @@ data/routen.geojson: data/umkreissuche.csv data/re_schulstand.geojson data/HKO_2
 data/routen_matrix.csv: data/HKO_2015.geojson data/re_schulstand.geojson routen_matrix.R
 	rm -f $@
 	Rscript routen_matrix.R
-	
+
 data/routen_matrix_sampled.csv: data/HKO_2015.geojson data/re_alkis_tatsaechlichenutzungflaechen.geojson data/RBS_OD_BLK_2015_12.geojson data/re_schulstand.geojson routen_matrix_sampled.R
 	rm -f $@
 	Rscript routen_matrix_sampled.R
