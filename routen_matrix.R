@@ -1,4 +1,5 @@
 library(dplyr)
+library(tidyr)
 library(rgdal)
 library(readr)
 library(osrm)
@@ -43,9 +44,9 @@ retry_null <- function(expr, silent=FALSE, max_attempts=10, verbose=FALSE) {
   stop("Failed after ", max_attempts, results)
 }
 
-slice_size = 1000
+slice_size = 10000
 pb = progress_bar$new(total = nrow(HKO_2015_df) %/% slice_size, format = "[:bar] :current of :total / :percent / eta: :eta", clear = F)
 HKO_2015_df %>%
   group_by(row_number() %/% slice_size) %>%
   by_slice(~ pb$tick() %after% retry_null(osrmTable(src = .x, dst = re_schulstand_df))$durations %>% as.data.frame %>% mutate(., src=rownames(.)) %>% gather(dst, time, -src), .collate="rows", .labels=F) %>%
-  write_csv('data/durations.csv')
+  write_csv('data/routen_matrix.csv')
