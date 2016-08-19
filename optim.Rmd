@@ -1,0 +1,391 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r libs, include=F, warning=F}
+library(readr)
+library(rgdal)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggmap)
+library(purrr)
+library(knitr)
+library(broom)
+library(maptools)
+```
+
+To run an optimization I need for one district (Neukölln?)
+- residential buildings ~> children per building ~> children age 5/6 per block
+- capacity per school
+
+Load all base data
+
+```{r load data}
+HKO_2015 = readOGR('data/HKO_2015.geojson', layer = 'OGRGeoJSON')
+alkis = readOGR('data/re_alkis_tatsaechlichenutzungflaechen.geojson', layer = 'OGRGeoJSON')
+bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON')
+blk = readOGR('data/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON')
+lor = readOGR('data/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON')
+re_schulstand = readOGR('data/re_schulstand.geojson', layer = 'OGRGeoJSON')
+```
+
+Load the huge route matrix
+
+```{r}
+umkreissuche = read_csv('data/umkreissuche.csv')
+routen_matrix = read_csv('data/routen_matrix.csv')
+```
+
+Load school capacities and population data
+
+```{r}
+kapas = read_csv('data/anmeldezahlen.csv') %>% filter(grepl('G', Schulnummer)) %>% filter(!is.na(`Plätze`))
+einwohner_lor = read_delim('data/EWR201512E_Matrix.csv', delim=';')
+```
+
+## Wo haben wir Kapazitäten?
+
+```{r}
+re_schulstand_df = re_schulstand %>% as.data.frame() %>% rename(lon=coords.x1, lat=coords.x2)
+re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% mutate(BEZIRK=enc2utf8(as.character(BEZIRK))) %>%
+  group_by(BEZIRK) %>% summarise(`Anzahl Schulen` = n()) %>%
+  rename(Bezirk=BEZIRK) %>% left_join(kapas %>% group_by(Bezirk) %>% summarise(`Mit Kapazität` = n()))
+```
+
+Wir wählen einen Bezirk, wo wir von allen Schulen Kapas haben.
+
+```{r}
+re_schulstand %>% as.data.frame() %>% filter(grepl('G', spatial_name)) %>% mutate(BEZIRK=enc2utf8(as.character(BEZIRK))) %>% group_by(BEZIRK) %>% summarise(`Anzahl Schulen` = n()) %>%
+  rename(Bezirk=BEZIRK) %>% left_join(kapas %>% group_by(Bezirk) %>% summarise(`Mit Kapazität` = n())) %>% filter(`Anzahl Schulen` == `Mit Kapazität`)
+```
+
+
+```{r}
+bezirk = 'Tempelhof-Schöneberg'
+schulen_mit_kapa = kapas %>% filter(Bezirk == bezirk) %>% .$Schulnummer
+schulen_mit_kapa
+grundschulen = re_schulstand %>% as.data.frame() %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK == bezirk) %>% .$spatial_name
+'In Anmeldeliste, fehlt in Schulstand'
+setdiff(schulen_mit_kapa, grundschulen)
+'In re_schulstand, fehlt in Anmeldeliste'
+setdiff(grundschulen, schulen_mit_kapa)
+```
+
+OMG nur bei Mitte mappt das perfekt! Alle anderen erfordern Nachforschungen.
+
+```{r}
+map = get_map('Berlin')
+```
+
+
+```{r}
+#re_schulstand[re_schulstand$spatial_name %in% setdiff(grundschulen, schulen_mit_anmeldungen),] %>% View()
+re_schulstand_df = re_schulstand_df %>% left_join(kapas, by=c('spatial_name'='Schulnummer'))
+```
+
+```{r}
+data = re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK==bezirk) %>% mutate(has.capa=is.na(`Plätze`))
+ggmap(map) + geom_point(aes(lon, lat, color=has.capa), data=data) +
+    coord_map(xlim=c(min(data$lon)-0.01, max(data$lon)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
+```
+
+Ignorieren das Problem und tun so, als ob nur diese Schulen relevant sind:
+
+```{r}
+relevant_schools = re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK==bezirk & !is.na(`Plätze`)) %>% .$spatial_name
+relevant_schools
+```
+
+## Kinder im Bezirk auf Gebäude aufteilen
+
+1. LORs in Neuköln
+1. Finden aller Wohngebebäude in diesen LORs
+2. Über `einwohler_lor` finden wir die durchschnittliche Kinderzahl pro _Wohngebäude
+
+### Mapping Bezirk->LOR->Block
+
+```{r}
+df_bez = as.data.frame(bez)
+df_lor = as.data.frame(lor)
+df_blk = as.data.frame(blk)
+```
+
+### LORs im Bezirk
+
+```{r}
+bez_id = filter(df_bez, BEZNAME == bezirk)$BEZ
+relevant_lors = df_lor %>% filter(BEZ == bez_id)
+relevant_blks = df_blk %>% filter(BEZ == bez_id)
+```
+
+
+```{r}
+ggplot() + geom_path(aes(x=long, y=lat, group=group), data=lor[lor$BEZ == bez_id,]) + coord_map() + geom_path(aes(x=long, y=lat, group=group), data=bez, color='red')
+```
+
+### Blöcke im Bezirk
+
+```{r}
+ggplot() + geom_path(aes(x=long, y=lat, group=group), data=blk[blk$BEZ == bez_id,]) + coord_map() + geom_path(aes(x=long, y=lat, group=group), data=bez[bez$BEZ == bez_id,], color='red')
+```
+
+
+### Wohngebäude in diesen LORs
+
+```{r}
+relevant_buildings = HKO_2015[!is.na(over(HKO_2015, bez[bez$BEZ == bez_id,])$BEZ),]
+relevant_alkis = alkis[!is.na(over(alkis, bez[bez$BEZ == bez_id,])$BEZ) & (alkis$AAA.Beschreibung == 'AX_Wohnbauflaeche' | grepl('Wohnen', alkis$Funktion_bezeichnung)),]
+residential_buildings = relevant_buildings[!is.na(over(relevant_buildings, relevant_alkis)$AAA.Beschreibung),]
+
+rb_df = tidy(residential_buildings) %>% rename(lon=coords.x1, lat=coords.x2)
+ggmap(map) + geom_path(aes(x=long, y=lat, group=group), data=lor[lor$BEZ == bez_id,], color='red') +
+  geom_point(aes(x=lon, y=lat), data=rb_df, color='black', size=0.01) +
+  coord_map(xlim=c(min(rb_df$lon)-0.01, max(rb_df$lon)+0.01), ylim=c(min(rb_df$lat)-0.01, max(rb_df$lat)+0.01))
+```
+
+### Alter
+
+```{r}
+relevant_ewr = einwohner_lor %>% select(RAUMID, E_E06_07) %>% filter(RAUMID %in% relevant_lors$PLR) %>%
+  mutate(kids=as.numeric(gsub(',','.',E_E06_07))) %>% as.data.frame()
+
+data = tidy(lor[lor$BEZ == bez_id,], region='PLR') %>% inner_join(relevant_ewr, by=c('id'='RAUMID'))
+ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
+  coord_map(xlim=c(min(rb_df$lon)-0.01, max(rb_df$lon)+0.01), ylim=c(min(rb_df$lat)-0.01, max(rb_df$lat)+0.01))
+```
+
+### Kids in BLKs
+
+For each LOR distribute the children according to the number of people living in that block
+
+```{r}
+kids_in_blks = relevant_blks %>% group_by(PLR) %>% mutate(EinwRatio = Einw/sum(Einw)) %>% ungroup %>% left_join(relevant_ewr, by=c('PLR'='RAUMID')) %>% mutate(kids = EinwRatio*kids) %>% select(BEZ, PLR, BLK, Einw, kids) %>% as.data.frame()
+row.names(kids_in_blks) = kids_in_blks$BLK
+
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(kids_in_blks, by=c('id'='BLK')) %>% mutate(kids=ifelse(kids==0, NA, kids), Einw=ifelse(Einw==0, NA, Einw))
+0
+ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
+  coord_map(xlim=c(min(rb_df$lon)-0.01, max(rb_df$lon)+0.01), ylim=c(min(rb_df$lat)-0.01, max(rb_df$lat)+0.01))
+```
+
+### Kapas
+
+```{r}
+relevant_kapas = kapas %>% select(Schulnummer, Kapa=`Plätze`) %>% filter(Schulnummer %in% relevant_schools) %>% as.data.frame()
+#row.names(relevant_kapas) = relevant_kapas$Schulnummer
+```
+
+### Sanity
+
+```{r}
+'Summe Kapas'
+relevant_kapas %>% .$Kapa %>% sum
+'Summe Kapas + extra'
+relevant_kapas %>% .$Kapa_extra %>% sum
+'Anmeldungen'
+kapas %>% mutate(Anmeldungen = as.numeric(gsub('[^0-9]', '', Anmeldungen))) %>% filter(Schulnummer %in% relevant_schools) %>% .$Anmeldungen %>% sum
+'Kids laut Statistik'
+kids_in_blks$kids %>% sum
+relevant_ewr$kids %>% sum
+```
+
+### Calculate mean distances to school per block
+
+find block of each residential building
+
+```{r}
+residential_buildings_blocks = residential_buildings %>% as.data.frame() %>% select(OI) %>% cbind(over(residential_buildings, blk[blk$BEZ == bez_id,'BLK']))
+residential_buildings_blocks
+```
+
+```{r}
+routes_from_blks = residential_buildings_blocks %>%
+  left_join(routen_matrix %>% filter(dst %in% relevant_schools), by=c('OI'='src'))
+head(routes_from_blks)
+```
+
+### Which blocks are relevant because there are residential buildings (TODO and someone lives there)
+
+```{r}
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(routes_from_blks %>% group_by(BLK) %>% summarise(n=n()), by=c('id'='BLK'))
+ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group), fill='red', data=data) +
+  geom_point(aes(x=lon, y=lat), data=rb_df, color='black', size=0.01) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
+```
+
+
+```{r}
+travel_from_blks = routes_from_blks %>% as.data.frame() %>% group_by(BLK, dst) %>% summarise(min=min(time), avg=mean(time), med=median(time), max=max(time)) %>% ungroup
+travel_from_blks
+travel_from_blks %>% write_csv('data/travel_from_blks.csv')
+```
+
+```{r}
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% left_join(travel_from_blks %>% group_by(BLK) %>% top_n(1, -avg), by=c('id'='BLK'))
+ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=-avg), data=data) +
+  geom_point(aes(lon, lat), color='red', data = re_schulstand_df %>% filter(BEZIRK==bezirk & SCHULART=='Grundschule')) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
+```
+
+
+```{r}
+travel_matrix = travel_from_blks %>% select(BLK, dst, avg) %>% spread(dst, avg)
+dim(travel_matrix)
+travel_matrix
+```
+
+# Select relevant data
+
+```{r}
+optim_kapas = relevant_kapas
+optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids) %>% mutate(kids=kids*0.90)
+nrow(optim_kids_in_blks)
+nrow(optim_kapas)
+
+select_schools = as.character(optim_kapas$Schulnummer)
+select_blks = as.character(optim_kids_in_blks$BLK)
+
+optim_matrix = inner_join(optim_kids_in_blks, travel_matrix, by='BLK')[select_schools]
+
+dim(optim_matrix)
+
+optim_kapas$Kapa %>% sum
+optim_kids_in_blks$kids %>% sum
+
+optim_matrix %>% write_csv('data/optim_matrix.csv')
+optim_kapas %>% write_csv('data/optim_kapas.csv')
+optim_kids_in_blks %>% write_csv('data/optim_blks.csv')
+```
+
+### Naive solution (that doesn't obey capacity constraints)
+
+```{r}
+solution = optim_matrix %>% mutate(BLK=optim_kids_in_blks$BLK) %>% gather(school, time, -BLK) %>% group_by(BLK) %>% top_n(1, -time) %>% ungroup
+
+optim_matrix %>% t %>% as.data.frame %>% summarise_each(funs(min)) %>% sum()
+
+solines = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school')) %>% inner_join(cbind(as.data.frame(coordinates(blk[blk$BEZ == bez_id,])), blk[blk$BEZ == bez_id,]@data['BLK']))
+
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% left_join(solution, by=c('id'='BLK'))
+ggmap(map, darken = c(0.5, 'white')) + geom_polygon(aes(x=long, y=lat, group=group, fill=school), data=data) +
+  geom_segment(aes(x=V1,y=V2,xend=lon,yend=lat), data=solines, size=0.3) +
+  geom_point(aes(lon, lat), color='black', size=2, data = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school'))) +
+  geom_point(aes(lon, lat, color=spatial_name), data = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school'))) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01)) +
+  guides(color=F, fill=F)
+```
+
+```{r}
+solution %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>% summarise_each("max", -BLK, -school, -time)
+```
+
+# JuMP
+
+```
+julia jump.jl
+```
+
+```{r}
+solution = read_csv('data/solution_jump.csv') %>% setNames(., select_schools) %>%
+  mutate(BLK=select_blks) %>% gather(school, assigned, -BLK) %>% filter(assigned > 0)
+
+solution %>% select(BLK, school) %>% write_csv('ESB_BLK.csv')
+
+solines = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school')) %>% inner_join(cbind(as.data.frame(coordinates(blk[blk$BEZ == bez_id,])), blk[blk$BEZ == bez_id,]@data['BLK']))
+
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% left_join(solution, by=c('id'='BLK'))
+ggmap(map, darken = c(0.5, 'white')) + geom_polygon(aes(x=long, y=lat, group=group, fill=school), data=data) +
+  geom_segment(aes(x=V1,y=V2,xend=lon,yend=lat), data=solines, size=0.3) +
+  geom_point(aes(lon, lat), color='black', size=2, data = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school'))) +
+  geom_point(aes(lon, lat, color=spatial_name), data = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school'))) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01)) +
+  guides(color=F, fill=F)
+```
+
+```{r}
+solution %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>% summarise_all(max)
+```
+
+```{r}
+sum(read_csv('data/solution_jump.csv') * optim_matrix)
+sum(read_csv('data/solution_jump.csv') * optim_matrix * optim_kids_in_blks$kids)
+```
+
+## Display
+
+```{r}
+library(formattable)
+```
+
+```{r}
+solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>%
+  group_by(school) %>% summarise(
+    kids=sum(kids),
+    num_blocks=n(),
+    min_time=min(min),
+    avg_time=mean((kids*avg)/sum(kids)),
+    max_time=max(max)
+  ) %>%
+  inner_join(relevant_kapas, by=c('school'='Schulnummer')) %>%
+  mutate(
+    utilization=kids/Kapa
+  ) %>% select(
+   Schule=school,
+   `Blöcke`=num_blocks,
+   Kapazität=Kapa,
+   Kinder=kids,
+   Auslastung=utilization,
+   `Weg (min)`=min_time,
+   `Weg (Ø)`=avg_time,
+   `Weg (max)`=max_time
+  ) %>%
+  formattable(
+    list(
+      Kinder = formatter("span", x ~ digits(x, 2)),
+      Auslastung = formatter("span",
+        style = x ~ style(color = ifelse(x < 1, "green", "red")),
+        x ~ icontext(ifelse(x < 1, "ok", "remove"), percent(x))
+      ),
+      `Weg (Ø)` = proportion_bar("lightblue"),
+      `Weg (min)` = proportion_bar("lightblue"),
+      `Weg (max)` = proportion_bar("lightblue")
+    )
+  )
+```
+
+# leaflet
+
+```{r}
+library(leaflet)
+```
+
+```{r}
+leaflet_data = subset(blk, BEZ == bez_id) %>% sp::merge(solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>% inner_join(re_schulstand_df, by=c('school'='spatial_name')))
+
+leaflet_schools = subset(re_schulstand_df, spatial_name %in% relevant_schools)
+
+school_colors = colorFactor(rainbow(length(relevant_schools)), levels=sample(relevant_schools))
+
+m <- leaflet(leaflet_data) %>%
+  addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
+  addPolylines(color='black', weight=4, opacity=1, data=subset(bez, BEZ == bez_id)) %>%
+  addPolygons(stroke = F, fillOpacity = 1, smoothFactor = 0.2,
+              color= ~school_colors(school), popup = ~htmlEscape(paste(BLK,'->',school,SCHULNAME))) %>%
+  addCircleMarkers(data=leaflet_schools, fillOpacity = 1, color='black', opacity=1, weight=2, radius=5,
+             fillColor= ~school_colors(spatial_name), popup = ~htmlEscape(paste(spatial_name, SCHULNAME)))
+m 
+```
+
+# Daten für das Tool
+```{r}
+write_rds(solution, 'tool/init_solution.rds')
+write_rds(subset(blk, BEZ == bez_id), 'tool/blocks.rds')
+write_rds(subset(re_schulstand_df, spatial_name %in% relevant_schools), 'tool/schools.rds')
+write_rds(subset(bez, BEZ == bez_id), 'tool/bez.rds')
+
+block_stats = optim_kids_in_blks %>% inner_join(travel_from_blks, by=c('BLK'='BLK')) %>% inner_join(relevant_kapas, by=c('dst'='Schulnummer')) %>% inner_join(re_schulstand_df, by=c('dst'='spatial_name'))
+write_rds(block_stats, 'tool/block_stats.rds')
+```
+
