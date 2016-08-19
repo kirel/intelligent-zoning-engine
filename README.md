@@ -70,4 +70,4 @@ Via https://github.com/acroca/osrm-docker
 
     docker run -v /osrm-data --name osrm-data acroca/osrm-docker:latest echo "running data container..."
     
-    docker run --rm --volumes-from osrm-data -p 5000:5000 cartography/osrm-backend-docker:latest osrm Berlin "http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf"
+    docker run --restart=always --volumes-from osrm-data -p 5000:5000 cartography/osrm-backend-docker:latest osrm Berlin "http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf"

@@ -1,0 +1,12 @@
+osrm:
+  build: .
+  command: osrm Berlin "http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf"
+  ports:
+    - "5000:5000"
+  restart: always
+  volumes:
+    - "./data:/osrm-data"
+    - "../:/schulen"
+
+#docker run -v /osrm-data --name osrm-data acroca/osrm-docker:latest echo "running data container..."
+#docker run --restart=always --volumes-from osrm-data -p 5000:5000 cartography/osrm-backend-docker:latest osrm Berlin "http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf"
