@@ -23,8 +23,7 @@ To run an optimization I need for one district (Neukölln?)
 Load all base data
 
 ```{r load data}
-HKO_2015 = readOGR('data/HKO_2015.geojson', layer = 'OGRGeoJSON')
-alkis = readOGR('data/re_alkis_tatsaechlichenutzungflaechen.geojson', layer = 'OGRGeoJSON')
+sampled_buildings = read_csv('data/sampled_buildings.csv')
 bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON')
 blk = readOGR('data/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON')
 lor = readOGR('data/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON')
@@ -34,11 +33,12 @@ re_schulstand = readOGR('data/re_schulstand.geojson', layer = 'OGRGeoJSON')
 Load the huge route matrix
 
 ```{r}
-umkreissuche = read_csv('data/umkreissuche.csv')
-routen_matrix = read_csv('data/routen_matrix.csv')
+routen_matrix = read_csv('data/routen_matrix.csv') %>% mutate(distance=distance*60)
 ```
 
 Load school capacities and population data
+
+TODO - neue Daten von Torres
 
 ```{r}
 kapas = read_csv('data/anmeldezahlen.csv') %>% filter(grepl('G', Schulnummer)) %>% filter(!is.na(`Plätze`))
@@ -134,18 +134,11 @@ ggplot() + geom_path(aes(x=long, y=lat, group=group), data=blk[blk$BEZ == bez_id
 
 ### Wohngebäude in diesen LORs
 
-```{r}
-relevant_buildings = HKO_2015[!is.na(over(HKO_2015, bez[bez$BEZ == bez_id,])$BEZ),]
-relevant_alkis = alkis[!is.na(over(alkis, bez[bez$BEZ == bez_id,])$BEZ) & (alkis$AAA.Beschreibung == 'AX_Wohnbauflaeche' | grepl('Wohnen', alkis$Funktion_bezeichnung)),]
-residential_buildings = relevant_buildings[!is.na(over(relevant_buildings, relevant_alkis)$AAA.Beschreibung),]
-
-rb_df = tidy(residential_buildings) %>% rename(lon=coords.x1, lat=coords.x2)
-ggmap(map) + geom_path(aes(x=long, y=lat, group=group), data=lor[lor$BEZ == bez_id,], color='red') +
-  geom_point(aes(x=lon, y=lat), data=rb_df, color='black', size=0.01) +
-  coord_map(xlim=c(min(rb_df$lon)-0.01, max(rb_df$lon)+0.01), ylim=c(min(rb_df$lat)-0.01, max(rb_df$lat)+0.01))
-```
+Schon erledigt in `sampled_buildings`.
 
 ### Alter
+
+TODO neue Daten von Torres
 
 ```{r}
 relevant_ewr = einwohner_lor %>% select(RAUMID, E_E06_07) %>% filter(RAUMID %in% relevant_lors$PLR) %>%
@@ -153,7 +146,7 @@ relevant_ewr = einwohner_lor %>% select(RAUMID, E_E06_07) %>% filter(RAUMID %in%
 
 data = tidy(lor[lor$BEZ == bez_id,], region='PLR') %>% inner_join(relevant_ewr, by=c('id'='RAUMID'))
 ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
-  coord_map(xlim=c(min(rb_df$lon)-0.01, max(rb_df$lon)+0.01), ylim=c(min(rb_df$lat)-0.01, max(rb_df$lat)+0.01))
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
 ```
 
 ### Kids in BLKs
@@ -167,7 +160,7 @@ row.names(kids_in_blks) = kids_in_blks$BLK
 data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(kids_in_blks, by=c('id'='BLK')) %>% mutate(kids=ifelse(kids==0, NA, kids), Einw=ifelse(Einw==0, NA, Einw))
 0
 ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
-  coord_map(xlim=c(min(rb_df$lon)-0.01, max(rb_df$lon)+0.01), ylim=c(min(rb_df$lat)-0.01, max(rb_df$lat)+0.01))
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
 ```
 
 ### Kapas
@@ -196,7 +189,7 @@ relevant_ewr$kids %>% sum
 find block of each residential building
 
 ```{r}
-residential_buildings_blocks = residential_buildings %>% as.data.frame() %>% select(OI) %>% cbind(over(residential_buildings, blk[blk$BEZ == bez_id,'BLK']))
+residential_buildings_blocks = sampled_buildings %>% inner_join(df_blk) %>% filter(BEZ == bez_id)
 residential_buildings_blocks
 ```
 
@@ -211,17 +204,18 @@ head(routes_from_blks)
 ```{r}
 data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(routes_from_blks %>% group_by(BLK) %>% summarise(n=n()), by=c('id'='BLK'))
 ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group), fill='red', data=data) +
-  geom_point(aes(x=lon, y=lat), data=rb_df, color='black', size=0.01) +
+  #geom_point(aes(x=lon, y=lat), data=rb_df, color='black', size=0.01) +
   coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
 ```
 
 
 ```{r}
-travel_from_blks = routes_from_blks %>% as.data.frame() %>% group_by(BLK, dst) %>% summarise(min=min(time), avg=mean(time), med=median(time), max=max(time)) %>% ungroup
+travel_from_blks = routes_from_blks %>% as.data.frame() %>% group_by(BLK, dst) %>% summarise(min=min(distance), avg=mean(distance), med=median(distance), max=max(distance)) %>% ungroup
 travel_from_blks
 travel_from_blks %>% write_csv('data/travel_from_blks.csv')
 ```
 
+Color Blocks by avg distance
 ```{r}
 data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% left_join(travel_from_blks %>% group_by(BLK) %>% top_n(1, -avg), by=c('id'='BLK'))
 ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=-avg), data=data) +
@@ -240,7 +234,7 @@ travel_matrix
 
 ```{r}
 optim_kapas = relevant_kapas
-optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids) %>% mutate(kids=kids*0.90)
+optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids) %>% mutate(kids=kids*0.88)
 nrow(optim_kids_in_blks)
 nrow(optim_kapas)
 
@@ -262,7 +256,7 @@ optim_kids_in_blks %>% write_csv('data/optim_blks.csv')
 ### Naive solution (that doesn't obey capacity constraints)
 
 ```{r}
-solution = optim_matrix %>% mutate(BLK=optim_kids_in_blks$BLK) %>% gather(school, time, -BLK) %>% group_by(BLK) %>% top_n(1, -time) %>% ungroup
+solution = optim_matrix %>% mutate(BLK=optim_kids_in_blks$BLK) %>% gather(school, dist, -BLK) %>% group_by(BLK) %>% top_n(1, -dist) %>% ungroup
 
 optim_matrix %>% t %>% as.data.frame %>% summarise_each(funs(min)) %>% sum()
 
@@ -278,7 +272,7 @@ ggmap(map, darken = c(0.5, 'white')) + geom_polygon(aes(x=long, y=lat, group=gro
 ```
 
 ```{r}
-solution %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>% summarise_each("max", -BLK, -school, -time)
+solution %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>% summarise_each("max", -BLK, -school, -dist)
 ```
 
 # JuMP
@@ -324,9 +318,9 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
   group_by(school) %>% summarise(
     kids=sum(kids),
     num_blocks=n(),
-    min_time=min(min),
-    avg_time=mean((kids*avg)/sum(kids)),
-    max_time=max(max)
+    min_dist=min(min),
+    avg_dist=mean((kids*avg)/sum(kids)),
+    max_dist=max(max)
   ) %>%
   inner_join(relevant_kapas, by=c('school'='Schulnummer')) %>%
   mutate(
@@ -337,9 +331,9 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
    Kapazität=Kapa,
    Kinder=kids,
    Auslastung=utilization,
-   `Weg (min)`=min_time,
-   `Weg (Ø)`=avg_time,
-   `Weg (max)`=max_time
+   `Weg (min)`=min_dist,
+   `Weg (Ø)`=avg_dist,
+   `Weg (max)`=max_dist
   ) %>%
   formattable(
     list(
@@ -355,28 +349,6 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
   )
 ```
 
-# leaflet
-
-```{r}
-library(leaflet)
-```
-
-```{r}
-leaflet_data = subset(blk, BEZ == bez_id) %>% sp::merge(solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>% inner_join(re_schulstand_df, by=c('school'='spatial_name')))
-
-leaflet_schools = subset(re_schulstand_df, spatial_name %in% relevant_schools)
-
-school_colors = colorFactor(rainbow(length(relevant_schools)), levels=sample(relevant_schools))
-
-m <- leaflet(leaflet_data) %>%
-  addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
-  addPolylines(color='black', weight=4, opacity=1, data=subset(bez, BEZ == bez_id)) %>%
-  addPolygons(stroke = F, fillOpacity = 1, smoothFactor = 0.2,
-              color= ~school_colors(school), popup = ~htmlEscape(paste(BLK,'->',school,SCHULNAME))) %>%
-  addCircleMarkers(data=leaflet_schools, fillOpacity = 1, color='black', opacity=1, weight=2, radius=5,
-             fillColor= ~school_colors(spatial_name), popup = ~htmlEscape(paste(spatial_name, SCHULNAME)))
-m 
-```
 
 # Daten für das Tool
 ```{r}
