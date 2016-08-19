@@ -403,6 +403,16 @@ Source: CRAN
 Version: 1.5-4
 Hash: d9793228e6242e0f025123fc19587990
 
+Package: multidplyr
+Source: github
+Version: 0.0.0.9000
+Hash: 08b90f9f949fb6fcd07d40f408c00c83
+Requires: dplyr, lazyeval, magrittr
+GithubRepo: multidplyr
+GithubUsername: hadley
+GithubRef: master
+GithubSha1: f6bece5c0934b5201b88e374043e626335c7badf
+
 Package: munsell
 Source: CRAN
 Version: 0.4.3
