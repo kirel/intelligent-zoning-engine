@@ -30,12 +30,22 @@ block_ids = unique(as.character(block_stats$BLK)) # blocks with stats
 # An individual is an assignment data frame BLK->school
 # every gene is an assignment BLK->school
 
+# preferrably sample blocks closer to the school
+# should be higher for smaller numbers
 distance_sample_weights = block_ids %>% map(function(block_id) {
   idx = block_stats$BLK == block_id
-  avg = block_stats[idx,]$avg
+  avg = as.double(block_stats[idx,]$avg)
   school = block_stats[idx,]$dst
-  set_names(1/exp(avg^3)/sum(1/exp(avg^3)), school)
+  # TODO make function and divide exponent by optimization step
+  weights = (1-(avg-min(avg))/max(avg-min(avg)))^3
+  set_names(weights, school)
 }) %>% set_names(block_ids)
+
+distance_sample_probs = function(block, heuristic_exponent=3) {
+  weights = distance_sample_weights[[block]]
+  pot_weights = weights^heuristic_exponent
+  pot_weights/sum(pot_weights)
+}
 
 block_index = set_names(1:length(blocks$BLK), blocks$BLK)
 blocks$selected = T # when the shool is selected
@@ -96,6 +106,7 @@ server <- function(input, output, session) {
     assignment_rev=0,
     selected_block='', selected_school='', selected_school_index=NULL,
     running_optimization=FALSE,
+    optimization_step=0,
     previous_mouseover='')
 
   ### Interaction
@@ -278,16 +289,17 @@ server <- function(input, output, session) {
         }
         # go some evolutionary steps
         steps = 4
+        heuristic_exponent = steps*50/(1+r$optimization_step)
         if (r$optimization_step %% steps == 0) 
           # do a step with only mutation
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.5, mating_factor=0), fitness_f, survival_fraction=1, max_population = 10)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.5, mating_factor=0, heuristic_exponent=heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
         else if (r$optimization_step %% 4 == 1)
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.1, mating_factor=0), fitness_f, survival_fraction=1, max_population = 10)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.1, mating_factor=0, heuristic_exponent=heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
         else if (r$optimization_step %% 4 == 2)
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.01, mating_factor=0), fitness_f, survival_fraction=1, max_population = 10)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.01, mating_factor=0, heuristic_exponent=heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
         else if (r$optimization_step %% 4 == 3) 
           # do a step with only crossover
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0, mating_factor=2), fitness_f, survival_fraction=1, max_population = 10)
+          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0, mating_factor=2, heuristic_exponent = heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
         
         fittest = r$ga_population[[1]]
         r$fittest_fitness = c(r$fittest_fitness, fitness_f(fittest))
@@ -312,17 +324,19 @@ server <- function(input, output, session) {
   })
   
   # randomly reassign a number of schools
-  ga_mutate = function(individual, fraction=0.05) {
+  ga_mutate = function(individual, fraction=0.05, heuristic_exponent=3) {
+    if (fraction == 0) return(individual)
     num_mutations = ceiling(fraction*nrow(individual))
     # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
-    cost = individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      transmute(cost=avg^2/sum(avg^2)) %>% .$cost
+    # TODO divide exponent by optimization step
+    prob = individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
+      transmute(avg=avg, cost=((avg-min(avg))/max(avg-min(avg)))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
     #cost = rep(1, nrow(individual))
     #cost = 1-cost
-    mutation_idx = sample(1:nrow(individual), num_mutations, prob = cost)
+    mutation_idx = sample(1:nrow(individual), num_mutations, prob = prob)
     mutation_blks = as.character(individual[mutation_idx, 'BLK'])
     # preferrably select schools closer to the block
-    mutations = mutation_blks %>% map(~ sample(names(distance_sample_weights[[.x]]), 1, replace=T, prob=distance_sample_weights[[.x]]))
+    mutations = mutation_blks %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
     individual[mutation_idx, 'school'] = unlist(mutations)
     individual
   }
@@ -343,14 +357,14 @@ server <- function(input, output, session) {
   
   # takes a list of individuals and breeds new ones in addition
   # returns the new population (that includes the old one)
-  ga_breed = function(population, mutation_fraction=0.01, mating_factor=1) {
+  ga_breed = function(population, mutation_fraction=0.01, mating_factor=1, heuristic_exponent=3) {
     mate_a = sample(population, length(population)*mating_factor, replace = T)
     mate_b = sample(population, length(population)*mating_factor, replace = T)
     
     cat('Mating', length(mate_a), 'pairs\n', file=stderr())
     
     # original population, mutated population and mated population
-    c(population, map(population, ~ ga_mutate(.x, mutation_fraction)) ,map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction)))
+    c(population, map(population, ~ ga_mutate(.x, mutation_fraction, heuristic_exponent)) ,map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction, heuristic_exponent)))
   }
   
   # selects the fittest individuals according to a fitness function
@@ -369,24 +383,29 @@ server <- function(input, output, session) {
   ### 
   
   fitness_f = function(individual) {
-    OVER_CAPACITY_PENALTY = 0.5
+    OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 0.3
+    DIST_WEIGHT = 0.0005
+    OVER_CAPACITY_WEIGHT = 1
+    UNDER_CAPACITY_WEIGHT = 1
     individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       group_by(school) %>%
-      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2)) %>%
+      summarise(kids=sum(kids), Kapa=first(Kapa), avg=mean(avg^2)) %>%
       #summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2*kids)) %>%
       rowwise() %>% mutate(over_capacity=max(1, kids-Kapa), under_capacity=max(1, Kapa-kids)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(avg=sum(avg), over_capacity_penalty=sum(over_capacity_penalty), under_capacity_penalty=sum(under_capacity_penalty)) %>%
       (function(x) {
-        if (runif(1)<0.01) {
-          cat('Distance error:', x$avg, '\n', file=stderr())
-          cat('Over capacity error:', x$over_capacity_penalty, '\n', file=stderr())
-          cat('Under capacity error:', x$under_capacity_penalty, '\n', file=stderr())
+        if (runif(1)<0.1) {
+          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=stderr())
+          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=stderr())
+          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=stderr())
         }
         x
       }) %>%
-      mutate(fitness=0.2*avg+1*over_capacity_penalty+1*under_capacity_penalty) %>% .$fitness
+      mutate(fitness = DIST_WEIGHT*avg +
+               OVER_CAPACITY_WEIGHT*over_capacity_penalty +
+               UNDER_CAPACITY_WEIGHT*under_capacity_penalty) %>% .$fitness
   }
 
   ### table
