@@ -84,15 +84,11 @@ data/routen.geojson: data/umkreissuche.csv data/re_schulstand.geojson data/HKO_2
 	rm -f $@
 	Rscript routen.R
 
-data/routen_matrix.csv: data/HKO_2015.geojson data/re_schulstand.geojson routen_matrix.R
-	rm -f $@
-	Rscript routen_matrix.R
-
 data/sampled_buildings.csv: data/HKO_2015.geojson data/re_alkis_tatsaechlichenutzungflaechen.geojson data/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
 	rm -f $@
 	Rscript sampled_buildings.R
 
-data/routen_matrix_sampled.csv: data/HKO_2015.geojson data/re_alkis_tatsaechlichenutzungflaechen.geojson data/RBS_OD_BLK_2015_12.geojson data/re_schulstand.geojson routen_matrix_sampled.R
+data/routen_matrix.csv: data/sampled_buildings.csv data/re_schulstand.geojson routen_matrix_sampled.R
 	rm -f $@
 	Rscript routen_matrix_sampled.R
 
