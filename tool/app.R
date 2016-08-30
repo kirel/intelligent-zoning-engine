@@ -8,8 +8,10 @@ library(colorspace)
 library(DT)
 library(ggplot2)
 library(shiny)
+library(memoise)
 
 options(shiny.autoreload=T)
+options(warn=-1)
 
 # Load data
 solution = read_rds('init_solution.rds') %>% select(BLK, school)
@@ -110,7 +112,7 @@ server <- function(input, output, session) {
     previous_mouseover='')
 
   ### Interaction
-  
+
   observeEvent(input$optimize, {
     if (r$running_optimization) {
       r$running_optimization = FALSE
@@ -172,7 +174,7 @@ server <- function(input, output, session) {
       r$blocks[r$blocks$BLK == r$selected_block, 'updated'] = T
       r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
       r$assignment_rev = r$assignment_rev + 1
-      
+
       add_current_to_ga_population()
     }
   })
@@ -250,35 +252,35 @@ server <- function(input, output, session) {
         removeShape('highlighted_block')
     }
   })
-  
+
   ### optimization
-  
+
   # Randomize (to test optimization)
   observeEvent(input$randomize, {
     random = blocks %>% as.data.frame() %>%
       filter(BLK %in% block_ids) %>%
       select(BLK, school) %>%
       mutate(school=sample(school_ids, nrow(.), replace = T))
-    
-    new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(random) %>% .$school
+
+    new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(random, by="BLK") %>% .$school
     r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
     r$blocks$updated = T
-    
+
     r$ga_population = list(random)
-    
+
     r$assignment_rev = r$assignment_rev + 1
   })
-  
+
   add_current_to_ga_population = function() {
     # select only blocks with stats and assign random schools for unassigned blocks
     current = blocks %>% as.data.frame() %>%
       filter(BLK %in% block_ids) %>%
       select(BLK) %>% left_join(r$blocks %>% as.data.frame() %>% select(BLK, school), by='BLK') %>%
       mutate(school=ifelse(school == '', sample(school_ids, length(is.na(school)), replace = T), school))
-    
+
     r$ga_population = list(current)
   }
-  
+
   observe({
     if (r$running_optimization) {
       cat(file=stderr(), 'Running optimization\n')
@@ -287,28 +289,19 @@ server <- function(input, output, session) {
         if (is.null(r$ga_population)) {
           add_current_to_ga_population()
         }
-        # go some evolutionary steps
-        steps = 4
-        heuristic_exponent = steps*50/(1+r$optimization_step)
-        if (r$optimization_step %% steps == 0) 
-          # do a step with only mutation
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.5, mating_factor=0, heuristic_exponent=heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
-        else if (r$optimization_step %% 4 == 1)
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.1, mating_factor=0, heuristic_exponent=heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
-        else if (r$optimization_step %% 4 == 2)
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0.01, mating_factor=0, heuristic_exponent=heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
-        else if (r$optimization_step %% 4 == 3) 
-          # do a step with only crossover
-          r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=0, mating_factor=2, heuristic_exponent = heuristic_exponent), fitness_f, survival_fraction=1, max_population = 10)
-        
+        heuristic_exponent = 50.0/(1+r$optimization_step)^(1) # TODO = 1/2?
+        mutation_fraction = max(0.005, 1-r$optimization_step/10)
+        cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
+        r$ga_population = ga_select(ga_breed(r$ga_population, mutation_fraction=mutation_fraction, mating=T, heuristic_exponent = heuristic_exponent), mem_fitness_f, max_population = 100)
+
         fittest = r$ga_population[[1]]
-        r$fittest_fitness = c(r$fittest_fitness, fitness_f(fittest))
-        
+        r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
+
         prev_schools = r$blocks$school
-        new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest) %>% .$school
+        new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
         r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
         r$blocks$updated = r$blocks$school != prev_schools
-        
+
         r$assignment_rev = r$assignment_rev + 1
         r$optimization_step = r$optimization_step + 1
       })
@@ -317,12 +310,12 @@ server <- function(input, output, session) {
       r$optimization_step = 0
     }
   })
-  
+
   output$fitness = renderPlot({
     ggplot() + geom_line(aes(x=seq_along(r$fittest_fitness), y=r$fittest_fitness)) +
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
-  
+
   # randomly reassign a number of schools
   ga_mutate = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
@@ -330,7 +323,7 @@ server <- function(input, output, session) {
     # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
     # TODO divide exponent by optimization step
     prob = individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      transmute(avg=avg, cost=((avg-min(avg))/max(avg-min(avg)))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
+      transmute(avg=avg, cost=(avg/max(avg))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
     #cost = rep(1, nrow(individual))
     #cost = 1-cost
     mutation_idx = sample(1:nrow(individual), num_mutations, prob = prob)
@@ -340,51 +333,67 @@ server <- function(input, output, session) {
     individual[mutation_idx, 'school'] = unlist(mutations)
     individual
   }
-  
-  # randomly mix assignments from two individuals into one
+
+  # randomly mix assignments from two individuals into two new ones
   # TODO only where they are different
   ga_crossover = function(a, b) {
-    child = a[,]
     # only select from genes that are different
     difference = a$school != b$school
-    if (sum(difference)==0) return(child)
+    if (sum(difference)==0) return(list(a, b))
+    child_a = a[,]
+    child_b = b[,]
     fraction = runif(1)
-    num_genes_b = ceiling(fraction*sum(difference))
-    b_genes = sample((1:nrow(b))[difference], num_genes_b)
-    child[b_genes, 'school'] = b[b_genes, 'school']
-    child
+    num_genes = ceiling(fraction*sum(difference))
+    swap_idx = sample((1:nrow(a))[difference], num_genes)
+    child_a[swap_idx, 'school'] = b[swap_idx, 'school']
+    child_b[swap_idx, 'school'] = a[swap_idx, 'school']
+    list(child_a, child_b)
   }
-  
+
   # takes a list of individuals and breeds new ones in addition
   # returns the new population (that includes the old one)
-  ga_breed = function(population, mutation_fraction=0.01, mating_factor=1, heuristic_exponent=3) {
-    mate_a = sample(population, length(population)*mating_factor, replace = T)
-    mate_b = sample(population, length(population)*mating_factor, replace = T)
+  ga_breed = function(population, mutation_fraction=0.01, mating=T, heuristic_exponent=3) {
+    if (mating && length(population) > 1) {
+      reordered = sample(population, length(population))
+      l = length(reordered)%/%2
+      mate_a = reordered[1:l]
+      mate_b = reordered[(l+1):(2*l)]
+      cat('Mating', l, 'pairs\n', file=stderr())
+    } else {
+      mate_a = mate_b = list()
+    }
+
+    mutated = map(population, ~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
+    mated = do.call(c, map2(mate_a, mate_b, ~ ga_crossover(.x, .y)))
     
-    cat('Mating', length(mate_a), 'pairs\n', file=stderr())
+    cat('original min fitness', min(unlist(map(population, mem_fitness_f))), '\n', file=stderr())
+    if (length(mutated)>0) cat('mutated min fitness', min(unlist(map(mutated, mem_fitness_f))), '\n', file=stderr())
+    if (length(mated)>0) cat('mated min fitness', min(unlist(map(mated, mem_fitness_f))), '\n', file=stderr())
     
     # original population, mutated population and mated population
-    c(population, map(population, ~ ga_mutate(.x, mutation_fraction, heuristic_exponent)) ,map2(mate_a, mate_b, ~ ga_mutate(ga_crossover(.x, .y), mutation_fraction, heuristic_exponent)))
+    new_population = c(
+      population,
+      mutated,
+      mated
+    )
   }
-  
+
   # selects the fittest individuals according to a fitness function
-  ga_select = function(population, fitness_f, survival_fraction=0.1, max_population=100) {
+  ga_select = function(population, fitness_f, survival_fraction=1, max_population=100) {
     cat('Population size', length(population), '\n', file=stderr())
-    population = sort_by(population, fitness_f)
+    population = sort_by(unique(population), fitness_f)
     num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
     cat('Keeping', num_survivors, 'survivors\n', file=stderr())
     #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
     survivors = population[1:num_survivors]
-    fitness = map(survivors, fitness_f) # FIXME remove!
-    cat('Survivor fitness', unlist(fitness), '\n', file=stderr())
     survivors
   }
-  
-  ### 
-  
+
+  ###
+
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
-    UNDER_CAPACITY_PENALTY = 0.3
+    UNDER_CAPACITY_PENALTY = 0.1
     DIST_WEIGHT = 0.0005
     OVER_CAPACITY_WEIGHT = 1
     UNDER_CAPACITY_WEIGHT = 1
@@ -396,7 +405,8 @@ server <- function(input, output, session) {
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(avg=sum(avg), over_capacity_penalty=sum(over_capacity_penalty), under_capacity_penalty=sum(under_capacity_penalty)) %>%
       (function(x) {
-        if (runif(1)<0.1) {
+        if (runif(1)<0) {
+        #if (runif(1)<0.1) {
           cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=stderr())
           cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=stderr())
           cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=stderr())
@@ -407,6 +417,8 @@ server <- function(input, output, session) {
                OVER_CAPACITY_WEIGHT*over_capacity_penalty +
                UNDER_CAPACITY_WEIGHT*under_capacity_penalty) %>% .$fitness
   }
+
+  mem_fitness_f = memoise(fitness_f)
 
   ### table
 
@@ -468,10 +480,10 @@ server <- function(input, output, session) {
       )
 
   })
-  
+
   ### Outputs
 
-  
+
   rowCallback = DT::JS("function(row, data) {",
 "
   if (data[4]+data[5] > 1) {
@@ -492,7 +504,7 @@ server <- function(input, output, session) {
   $('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
 ",
   "}")
-  
+
   output$table = renderDataTable({
     data = isolate(reactive_table_data())
     data %>% datatable(
@@ -549,7 +561,7 @@ server <- function(input, output, session) {
   output$block = renderUI({
     div(h4(r$selected_block))
   })
-  
+
   output$optimize = renderUI({
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
