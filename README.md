@@ -47,7 +47,11 @@ Alle Daten herunterladen und vorverarbeiten via
 
     make process
 
-Some of the tasks need OSRM running
+Some of the tasks need OSRM running...
+
+Final step
+
+    make app_data
 
 ## Run app
 

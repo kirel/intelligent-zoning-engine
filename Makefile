@@ -100,3 +100,4 @@ process: output/HKO_2015.geojson output/routen.geojson output/sampled_buildings.
 
 optim.nb.html: optim.Rmd
 	Rscript -e "rmarkdown::render('optim.Rmd')"
+app_data: optim.nb.html
