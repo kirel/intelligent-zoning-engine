@@ -18,9 +18,5 @@ RUN git clone --depth 1 https://github.com/niemeier-PSI/osrm-backend.git -b tabl
   && echo "disk=/tmp/stxxl,25000,syscall" > .stxxl \
   && rm -rf /osrm-src
 
-RUN npm install --unsafe-perm osrm # in osrm-build
-
-COPY osrm.js .
-
 RUN apt-get clean \
  && rm -rf /var/lib/apt/lists/*
