@@ -14,12 +14,12 @@ options(osrm.profile = "foot")
 #library(ggplot2)
 #library(broom)
 
-re_schulstand = readOGR('data/re_schulstand.geojson', 'OGRGeoJSON')
+re_schulstand = readOGR('download/re_schulstand.geojson', 'OGRGeoJSON')
 re_schulstand_df = cbind(coordinates(re_schulstand), re_schulstand@data) %>%
   select(school_id=spatial_name, s_long=coords.x1, s_lat=coords.x2) %>%
   filter(grepl('G', school_id))
 
-sampled_buildings = read_csv('data/sampled_buildings.csv')
+sampled_buildings = read_csv('output/sampled_buildings.csv')
 
 
 `%after%` = function(a , b) {
@@ -61,4 +61,4 @@ routen_matrix = sampled_buildings %>% select(OI, long, lat) %>%
     }), .collate="rows", .labels=F)
 routen_matrix_1000=routen_matrix
 
-routen_matrix %>% write_csv('data/routen_matrix.csv')
+routen_matrix %>% write_csv('output/routen_matrix.csv')

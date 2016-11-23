@@ -92,15 +92,11 @@ output/HKO_2015.geojson: download/HKO_2015_EPSG5650.txt HKO_2015.R
 	rm -f $@
 	Rscript HKO_2015.R
 
-output/routen.geojson: output/umkreissuche.csv download/re_schulstand.geojson output/HKO_2015.geojson routen.R
-	rm -f $@
-	Rscript routen.R
-
 output/sampled_buildings.csv: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
 	rm -f $@
 	Rscript sampled_buildings.R
 
-output/routen_matrix.csv: data/sampled_buildings.csv data/re_schulstand.geojson routen_matrix_sampled.R
+output/routen_matrix.csv: output/sampled_buildings.csv download/re_schulstand.geojson routen_matrix_sampled.R
 	rm -f $@
 	Rscript routen_matrix_sampled.R
 
