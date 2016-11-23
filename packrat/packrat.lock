@@ -439,12 +439,12 @@ Requires: Rcpp
 Package: osrm
 Source: github
 Version: 3.0.9000
-Hash: d520ce3b3a55be6feaf7ec7284d120b5
+Hash: 5875fd1576e33b045423717ddc468aa0
 Requires: RCurl, gepaf, jsonlite, raster, rgeos, sp
 GithubRepo: osrm
-GithubUsername: rCarto
-GithubRef: master
-GithubSha1: 565d1ce1aba5c350908d4bca679fb71bfa43c0ec
+GithubUsername: kirel
+GithubRef: table-distances
+GithubSha1: d4615a54b7ae14f18eaf2a2599633140d19f1667
 
 Package: packrat
 Source: CRAN
@@ -546,8 +546,8 @@ Hash: def074f38d0cff3b597649ee6f976128
 Package: rmarkdown
 Source: CRAN
 Version: 1.0
-Requires: base64enc, jsonlite, yaml, caTools, htmltools, evaluate,
-    knitr
+Requires: base64enc, jsonlite, yaml, caTools, htmltools, tibble,
+    evaluate, knitr
 
 Package: rngtools
 Source: CRAN
