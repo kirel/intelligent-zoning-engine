@@ -23,17 +23,17 @@ To run an optimization I need for one district (Neukölln?)
 Load all base data
 
 ```{r load data}
-sampled_buildings = read_csv('data/sampled_buildings.csv')
-bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON')
-blk = readOGR('data/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON')
-lor = readOGR('data/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON')
-re_schulstand = readOGR('data/re_schulstand.geojson', layer = 'OGRGeoJSON')
+sampled_buildings = read_csv('output/sampled_buildings.csv')
+bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON')
+blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON')
+lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON')
+re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON')
 ```
 
 Load the huge route matrix
 
 ```{r}
-routen_matrix = read_csv('data/routen_matrix.csv') %>% mutate(distance=distance*60)
+routen_matrix = read_csv('output/routen_matrix.csv') %>% mutate(distance=distance*60)
 ```
 
 Load school capacities and population data
@@ -41,8 +41,8 @@ Load school capacities and population data
 TODO - neue Daten von Torres
 
 ```{r}
-kapas = read_csv('data/anmeldezahlen.csv') %>% filter(grepl('G', Schulnummer)) %>% filter(!is.na(`Plätze`))
-einwohner_lor = read_delim('data/EWR201512E_Matrix.csv', delim=';')
+kapas = read_csv('download/anmeldezahlen.csv') %>% filter(grepl('G', Schulnummer)) %>% filter(!is.na(`Plätze`))
+einwohner_lor = read_delim('download/EWR201512E_Matrix.csv', delim=';')
 ```
 
 ## Wo haben wir Kapazitäten?
@@ -212,7 +212,7 @@ ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group), fill='red', data=data
 ```{r}
 travel_from_blks = routes_from_blks %>% as.data.frame() %>% group_by(BLK, dst) %>% summarise(min=min(distance), avg=mean(distance), med=median(distance), max=max(distance)) %>% ungroup
 travel_from_blks
-travel_from_blks %>% write_csv('data/travel_from_blks.csv')
+travel_from_blks %>% write_csv('output/travel_from_blks.csv')
 ```
 
 Color Blocks by avg distance
@@ -248,9 +248,9 @@ dim(optim_matrix)
 optim_kapas$Kapa %>% sum
 optim_kids_in_blks$kids %>% sum
 
-optim_matrix %>% write_csv('data/optim_matrix.csv')
-optim_kapas %>% write_csv('data/optim_kapas.csv')
-optim_kids_in_blks %>% write_csv('data/optim_blks.csv')
+optim_matrix %>% write_csv('output/optim_matrix.csv')
+optim_kapas %>% write_csv('output/optim_kapas.csv')
+optim_kids_in_blks %>% write_csv('output/optim_blks.csv')
 ```
 
 ### Naive solution (that doesn't obey capacity constraints)
@@ -282,10 +282,8 @@ julia jump.jl
 ```
 
 ```{r}
-solution = read_csv('data/solution_jump.csv') %>% setNames(., select_schools) %>%
+solution = read_csv('output/solution_jump.csv') %>% setNames(., select_schools) %>%
   mutate(BLK=select_blks) %>% gather(school, assigned, -BLK) %>% filter(assigned > 0)
-
-solution %>% select(BLK, school) %>% write_csv('ESB_BLK.csv')
 
 solines = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school')) %>% inner_join(cbind(as.data.frame(coordinates(blk[blk$BEZ == bez_id,])), blk[blk$BEZ == bez_id,]@data['BLK']))
 
@@ -303,8 +301,8 @@ solution %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>%
 ```
 
 ```{r}
-sum(read_csv('data/solution_jump.csv') * optim_matrix)
-sum(read_csv('data/solution_jump.csv') * optim_matrix * optim_kids_in_blks$kids)
+sum(read_csv('output/solution_jump.csv') * optim_matrix)
+sum(read_csv('output/solution_jump.csv') * optim_matrix * optim_kids_in_blks$kids)
 ```
 
 ## Display
@@ -352,12 +350,12 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
 
 # Daten für das Tool
 ```{r}
-write_rds(solution, 'tool/init_solution.rds')
-write_rds(subset(blk, BEZ == bez_id), 'tool/blocks.rds')
-write_rds(subset(re_schulstand_df, spatial_name %in% relevant_schools), 'tool/schools.rds')
-write_rds(subset(bez, BEZ == bez_id), 'tool/bez.rds')
+write_rds(solution, 'app/data/init_solution.rds')
+write_rds(subset(blk, BEZ == bez_id), 'app/data/blocks.rds')
+write_rds(subset(re_schulstand_df, spatial_name %in% relevant_schools), 'app/data/schools.rds')
+write_rds(subset(bez, BEZ == bez_id), 'app/data/bez.rds')
 
 block_stats = optim_kids_in_blks %>% inner_join(travel_from_blks, by=c('BLK'='BLK')) %>% inner_join(relevant_kapas, by=c('dst'='Schulnummer')) %>% inner_join(re_schulstand_df, by=c('dst'='spatial_name'))
-write_rds(block_stats, 'tool/block_stats.rds')
+write_rds(block_stats, 'app/data/block_stats.rds')
 ```
 
