@@ -1,5 +1,8 @@
 osrm/data/*
-/log/
+/log/*
+/output/*
+/download/*
+/app/data/*
 
 # History files
 .Rhistory

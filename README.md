@@ -1,73 +1,64 @@
-# Back to school
+# Intelligent Zoing Engine
+
+IZE is a tool for cutting catchment areas. We are using it for primary schools in Berlin.
+
+![](screenshot.png)
+
+## Setup
+
+    cp dotenv.example .env
+    brew install R
+
+Also install https://www.docker.com/
+
+Folder structure is as follows:
+- data — contains _immutable_ data
+- download – contains downloaded datasets (disposable - recreate with `make download`)
+- output – contains generated datasets (disposable - see `Makefile`)
+- app – contains the shiny app
+- R – contains R files containing functions
+- figs – contains generated graphics/reports (disposable)
+- . – contains Notebooks and R Scripts that do stuff (many of them will be run by `make` targets)
+
+### OSRM
+
+	cd osrm
+	docker-compose up
+
+We are using this pull request: https://github.com/Project-OSRM/osrm-backend/pull/2764
+
+	curl "http://localhost:5000/table/v1/foot/13.388860,52.517037;13.397634,52.529407;13.428555,52.523219?sources=0&output_components=distances;durations"
+	
+And in R
+
+    devtools::install_github("kirel/osrm", ref = "table-distances")
+
+## Scraper
+
+Don't run this. Data is in `data`.
+
+## Download data
+
+    make download
+
+## Preprocessing
 
 Alle Daten herunterladen und vorverarbeiten via
 
-		make all
+    make process
 
-## Schulen
+Some of the tasks need OSRM running
 
-http://fbinter.stadt-berlin.de/fb/berlin/service.jsp?id=re_schulstand@senstadt&type=WFS&themeType=spatial 
+## Run app
 
-Weitere Daten (allerdings nicht Maschinenlesbar) finden sich unter https://www.berlin.de/sen/bildung/schule/berliner-schulen/schulverzeichnis/
+    docker-compose up
+    open http://localhost:3535
 
-## Hauskoordinaten
+or
 
-http://fbarc.stadt-berlin.de/FIS_Broker_Atom/Hauskoordinaten/HKO_EPSG5650.zip
+    sh start.sh
+    open http://localhost:3535
 
-## Einzugsbereiche
+## Datenkatalog
 
-Via https://daten.berlin.de/datensaetze/grundschuleinzugsbereiche-geometrien-berlin-2012-mit-demographischen-merkmalen
-
-https://www.statistik-berlin-brandenburg.de/opendata/ESB2012_WGS84_EWR2012-12.zip
-
-Und via Scraper:
-https://www.berlin.de/sen/jugend/familie-und-kinder/kindertagesbetreuung/kitas/umkreis/
-
-## LOR
-
-Via
-
-http://www.stadtentwicklung.berlin.de/planen/basisdaten_stadtentwicklung/lor/de/download.shtml
-
-
-## Flächennutzung
-
-via http://fbinter.stadt-berlin.de/fb/index.jsp?loginkey=showShortInfo&mapId=wmsk_alkis@senstadt&Szenario=fbinter_jsc
-
-## Einwohnerzahlen
-
-http://daten.berlin.de/datensaetze/einwohnerinnen-und-einwohner-berlin-lor-planungsr%C3%A4umen-am-31122015
-
-https://www.statistik-berlin-brandenburg.de/opendata/EWR201512E_Matrix.csv
-
-Erklärung unter https://www.statistik-berlin-brandenburg.de/opendata/Beschreibung_EWR_Open_Data.pdf
-
-Oder als Shape aber weniger aufgelöst:
-
-http://fbinter.stadt-berlin.de/fb/berlin/service.jsp?id=re_einwohnerdichte2015@senstadt&type=WFS&themeType=spatial
-
-
-## Soziale Daten
-
-- http://www.stadtentwicklung.berlin.de/planen/basisdaten_stadtentwicklung/monitoring/index.shtml
-		
-Eventuell http://www.stadtentwicklung.berlin.de/planen/bevoelkerungsprognose/de/download/
-
-## Graphhopper
-
-Via https://github.com/sogorkis/dockerfile/tree/master/graphhopper
-
-    wget http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf
-
-    docker build . -t kirel/graphhopper
-    docker run --rm -v $PWD/osm:/data -p 8990:8989 kirel/graphhopper /graphhopper/start.sh
-
-Routing api https://github.com/graphhopper/graphhopper/blob/master/docs/web/api-doc.md
-
-## OSRM
-
-Via https://github.com/acroca/osrm-docker
-
-    docker run -v /osrm-data --name osrm-data acroca/osrm-docker:latest echo "running data container..."
-    
-    docker run --restart=always --volumes-from osrm-data -p 5000:5000 cartography/osrm-backend-docker:latest osrm Berlin "http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf"
+See `DATA.md`
