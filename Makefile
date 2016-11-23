@@ -81,10 +81,6 @@ anmeldezahlen: download/anmeldezahlen.csv
 
 download: schulen adressen einzugsbereiche LOR flaechen RBS einwohner anmeldezahlen
 
-# osm
-osm/berlin-latest.osm.pbf:
-	wget http://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf -O $@
-
 
 # *** Process data
 
