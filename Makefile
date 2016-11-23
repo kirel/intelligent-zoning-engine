@@ -96,7 +96,7 @@ output/routen.geojson: output/umkreissuche.csv download/re_schulstand.geojson ou
 	rm -f $@
 	Rscript routen.R
 
-output/sampled_buildings.csv: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson data/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
+output/sampled_buildings.csv: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
 	rm -f $@
 	Rscript sampled_buildings.R
 

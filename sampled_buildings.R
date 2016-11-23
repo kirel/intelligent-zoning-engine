@@ -10,9 +10,9 @@ library(purrr)
 #library(ggplot2)
 #library(broom)
 
-HKO_2015 = readOGR('data/HKO_2015.geojson', 'OGRGeoJSON')
-blk = readOGR('data/RBS_OD_BLK_2015_12.geojson', 'OGRGeoJSON')
-alkis = readOGR('data/re_alkis_tatsaechlichenutzungflaechen.geojson', layer = 'OGRGeoJSON')
+HKO_2015 = readOGR('download/HKO_2015.geojson', 'OGRGeoJSON')
+blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', 'OGRGeoJSON')
+alkis = readOGR('download/re_alkis_tatsaechlichenutzungflaechen.geojson', layer = 'OGRGeoJSON')
 
 blk$area = sapply(slot(blk, "polygons"), slot, "area")
 residential = alkis[alkis$AAA.Beschreibung == 'AX_Wohnbauflaeche' | grepl('Wohnen', alkis$Funktion_bezeichnung),]
@@ -74,4 +74,4 @@ num_samples_per_block_varpn = samplesizes_n_stratified(residential_buildings_df,
 sampled_per_block_varpn = residential_buildings_df %>% inner_join(num_samples_per_block_varpn, by='BLK') %>%
   group_by(BLK) %>% do(sample_n(., first(.$chosen))) %>% ungroup()
 
-sampled_per_block_varpn %>% select(OI, long, lat, BLK) %>% write_csv('data/sampled_buildings.csv')
+sampled_per_block_varpn %>% select(OI, long, lat, BLK) %>% write_csv('output/sampled_buildings.csv')
