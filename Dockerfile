@@ -6,5 +6,7 @@ RUN R -e "install.packages(c('Cairo'), repos='https://cran.rstudio.com/')"
 RUN R -e "install.packages(c('purrr'), repos='https://cran.rstudio.com/')"
 RUN R -e "install.packages(c('DT'), repos='https://cran.rstudio.com/')"
 RUN R -e "install.packages(c('shinydashboard'), repos='https://cran.rstudio.com/')"
+RUN R -e "install.packages(c('ggplot2'), repos='https://cran.rstudio.com/')"
+RUN R -e "install.packages(c('memoise'), repos='https://cran.rstudio.com/')"
 
-copy tool /srv/shiny-server
+copy app /srv/shiny-server
