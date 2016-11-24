@@ -9,6 +9,9 @@ library(ggplot2)
 library(shiny)
 library(DT)
 library(memoise)
+library(future)
+
+plan(multiprocess)
 
 options(shiny.autoreload=T)
 options(warn=-1)
@@ -111,6 +114,7 @@ server <- function(input, output, session) {
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
     selected_block='', selected_school='', selected_school_index=NULL,
     running_optimization=FALSE,
+    ga_population_future=future(NULL),
     optimization_step=0,
     previous_mouseover='')
 
@@ -295,32 +299,43 @@ server <- function(input, output, session) {
           add_current_to_ga_population()
         }
         
-        heuristic_exponent = 20/(1+r$optimization_step)^(1) # TODO = 1/2?
-        mutation_fraction = max(0.001, 1-r$optimization_step/3)
-        cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
-        r$ga_population = ga_select(
-          ga_breed(r$ga_population,
-                   fitness_f=mem_fitness_f,
-                   mutation_fraction=mutation_fraction,
-                   num_pairs = 50,
-                   num_mutants = 50,
-                   heuristic_exponent = heuristic_exponent),
-          mem_fitness_f,
-          max_population = 50)
-
-        fittest = r$ga_population[[1]]
-        r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
-
-        # update relevant values for ui updates
-        prev_schools = r$blocks$school
-        new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
-        r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
-        r$blocks$updated = r$blocks$school != prev_schools
-
-        r$assignment_rev = r$assignment_rev + 1
-        r$optimization_step = r$optimization_step + 1
+        # if there is a resolved ga_population_future take the result and update all the things, then start a new one
+        if (resolved(r$ga_population_future)) {
+          future_population = value(r$ga_population_future)
+          if (!is.null(future_population)) {
+            r$ga_population = future_population
+            
+            fittest = r$ga_population[[1]]
+            r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
+            
+            # update relevant values for ui updates
+            prev_schools = r$blocks$school
+            new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
+            r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
+            r$blocks$updated = r$blocks$school != prev_schools
+            
+            r$assignment_rev = r$assignment_rev + 1
+            r$optimization_step = r$optimization_step + 1
+          }
+          
+          heuristic_exponent = 20/(1+r$optimization_step)^(1) # TODO = 1/2?
+          mutation_fraction = max(0.001, 1-r$optimization_step/3)
+          cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
+          
+          r$ga_population_future = future({
+            ga_select(
+              ga_breed(r$ga_population,
+                       fitness_f=mem_fitness_f,
+                       mutation_fraction=mutation_fraction,
+                       num_pairs = 200,
+                       num_mutants = 200,
+                       heuristic_exponent = heuristic_exponent),
+              mem_fitness_f,
+              max_population = 200)
+          })  
+        } # otherwise just skip and do nothing in this iteration
       })
-      invalidateLater(500, session)
+      invalidateLater(100, session)
     } else {
       r$optimization_step = 0
       forget(mem_fitness_f)
