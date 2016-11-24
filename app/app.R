@@ -108,7 +108,7 @@ server <- function(input, output, session) {
 
   r <- reactiveValues(
     blocks=blocks, schools=schools,
-    assignment_rev=0,
+    assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
     selected_block='', selected_school='', selected_school_index=NULL,
     running_optimization=FALSE,
     optimization_step=0,
@@ -274,6 +274,8 @@ server <- function(input, output, session) {
     r$assignment_rev = r$assignment_rev + 1
   })
 
+  # make sure there is at least one individual in the population
+  # see main optimization loop
   add_current_to_ga_population = function() {
     # select only blocks with stats and assign random schools for unassigned blocks
     current = blocks %>% as.data.frame() %>%
@@ -284,6 +286,7 @@ server <- function(input, output, session) {
     r$ga_population = list(current)
   }
 
+  # main optimization loop
   observe({
     if (r$running_optimization) {
       isolate({
@@ -291,6 +294,7 @@ server <- function(input, output, session) {
         if (is.null(r$ga_population)) {
           add_current_to_ga_population()
         }
+        
         heuristic_exponent = 20/(1+r$optimization_step)^(1) # TODO = 1/2?
         mutation_fraction = max(0.001, 1-r$optimization_step/3)
         cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
@@ -307,6 +311,7 @@ server <- function(input, output, session) {
         fittest = r$ga_population[[1]]
         r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
 
+        # update relevant values for ui updates
         prev_schools = r$blocks$school
         new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
         r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
@@ -329,6 +334,8 @@ server <- function(input, output, session) {
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
 
+  ### genetic algorithm
+  
   # randomly reassign a number of schools
   ga_mutate = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
@@ -366,13 +373,16 @@ server <- function(input, output, session) {
   # takes a list of individuals and breeds new ones in addition
   # returns the new population (that includes the old one)
   ga_breed = function(population, fitness_f, num_pairs = 50, num_mutants = 100, mutation_fraction=0.001, heuristic_exponent=3) {
+    # precalculate sampling weights for sampling from the fittest
     fitness = unlist(map(population, fitness_f))
     cat('original population fitness', summary(fitness), '\n', file=stderr())
     weights = -fitness+min(fitness)+max(fitness)
     prob = weights/sum(weights)
 
     cat('Mutating', num_mutants, 'individuals\n', file=stderr())
-    mutated = population %>% sample(num_mutants, replace = T, prob = prob) %>% map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
+    mutated = population %>%
+      sample(num_mutants, replace = T, prob = prob) %>% # sample based on fitness
+      map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
     if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=stderr())
     
     mating_population = c(population, mutated)
@@ -382,7 +392,7 @@ server <- function(input, output, session) {
       mating_prob = mating_weights/sum(mating_weights)
       
       cat('Mating', num_pairs, 'pairs\n', file=stderr())
-      pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob))
+      pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob)) # sample based on fitness
       mated = do.call(c, map(pairs, ~ do.call(ga_crossover, .x)))
       cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=stderr())
     } else {
@@ -409,7 +419,7 @@ server <- function(input, output, session) {
     survivors
   }
 
-  ###
+  ### /genetic algorithm
 
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
@@ -443,7 +453,7 @@ server <- function(input, output, session) {
   ### table
 
   reactive_table_data = reactive({
-    r$assignment_rev
+    r$assignment_rev # recalculate of assignment_rev is altered
     data = isolate(r$blocks) %>% as.data.frame() %>%
       mutate(school=ifelse(school == '', 'Keine', school))
 
