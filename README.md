@@ -6,7 +6,7 @@ IZE is a tool for cutting catchment areas. We are using it for primary schools i
 
 ## Setup
 
-    cp dotenv.example .env
+    brew install gdal
     brew install R
 
 Also install https://www.docker.com/
