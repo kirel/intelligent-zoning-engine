@@ -3,6 +3,7 @@ osrm/data/*
 /output/*
 /download/*
 /app/data/*
+/app/*.log
 
 # History files
 .Rhistory
