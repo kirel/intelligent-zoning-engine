@@ -182,7 +182,8 @@ server <- function(input, output, session) {
       r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
       r$assignment_rev = r$assignment_rev + 1
 
-      add_current_to_ga_population()
+      # cancel optimization step (which is now invalid)
+      resetOptimization()
     }
   })
 
@@ -289,6 +290,14 @@ server <- function(input, output, session) {
 
     r$ga_population = list(current)
   }
+  
+  resetOptimization = function() {
+    cat('Resetting optimization before step', r$optimization_step, 'finished\n', file=stderr())
+    r$optimization_step = 0
+    # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
+    forget(mem_fitness_f)
+    add_current_to_ga_population()
+  }
 
   # main optimization loop
   observe({
@@ -301,8 +310,9 @@ server <- function(input, output, session) {
         
         # if there is a resolved ga_population_future take the result and update all the things, then start a new one
         if (resolved(r$ga_population_future)) {
+          cat('Finished optimization step', r$optimization_step, '\n', file=stderr())
           future_population = value(r$ga_population_future)
-          if (!is.null(future_population)) {
+          if (r$optimization_step > 0 && !is.null(future_population)) {
             r$ga_population = future_population
             
             fittest = r$ga_population[[1]]
@@ -315,11 +325,11 @@ server <- function(input, output, session) {
             r$blocks$updated = r$blocks$school != prev_schools
             
             r$assignment_rev = r$assignment_rev + 1
-            r$optimization_step = r$optimization_step + 1
           }
           
-          heuristic_exponent = 20/(1+r$optimization_step)^(1) # TODO = 1/2?
-          mutation_fraction = max(0.001, 1-r$optimization_step/3)
+          r$optimization_step = r$optimization_step + 1
+          heuristic_exponent = 20/r$optimization_step^(1) # TODO = 1/2?
+          mutation_fraction = max(0.001, 1-(r$optimization_step-1)/3)
           cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
           
           r$ga_population_future = future({
@@ -327,11 +337,11 @@ server <- function(input, output, session) {
               ga_breed(r$ga_population,
                        fitness_f=mem_fitness_f,
                        mutation_fraction=mutation_fraction,
-                       num_pairs = 200,
-                       num_mutants = 200,
+                       num_pairs = 50,
+                       num_mutants = 50,
                        heuristic_exponent = heuristic_exponent),
               mem_fitness_f,
-              max_population = 200)
+              max_population = 50)
           })  
         } # otherwise just skip and do nothing in this iteration
       })
