@@ -33,7 +33,7 @@ re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON')
 Load the huge route matrix
 
 ```{r}
-routen_matrix = read_csv('output/routen_matrix.csv') %>% mutate(distance=distance*60)
+routen_matrix = read_csv('output/routen_matrix.csv')# %>% mutate(distance=distance*60)
 ```
 
 Load school capacities and population data
@@ -234,7 +234,7 @@ travel_matrix
 
 ```{r}
 optim_kapas = relevant_kapas
-optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids) %>% mutate(kids=kids*0.88)
+optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids) %>% mutate(kids=kids)
 nrow(optim_kids_in_blks)
 nrow(optim_kapas)
 
@@ -282,12 +282,12 @@ julia jump.jl
 ```
 
 ```{r}
-solution = read_csv('output/solution_jump.csv') %>% setNames(., select_schools) %>%
+julia_solution = read_csv('output/solution_jump.csv') %>% setNames(., select_schools) %>%
   mutate(BLK=select_blks) %>% gather(school, assigned, -BLK) %>% filter(assigned > 0)
 
-solines = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school')) %>% inner_join(cbind(as.data.frame(coordinates(blk[blk$BEZ == bez_id,])), blk[blk$BEZ == bez_id,]@data['BLK']))
+solines = re_schulstand_df %>% inner_join(julia_solution, by=c('spatial_name'='school')) %>% inner_join(cbind(as.data.frame(coordinates(blk[blk$BEZ == bez_id,])), blk[blk$BEZ == bez_id,]@data['BLK']))
 
-data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% left_join(solution, by=c('id'='BLK'))
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% left_join(julia_solution, by=c('id'='BLK'))
 ggmap(map, darken = c(0.5, 'white')) + geom_polygon(aes(x=long, y=lat, group=group, fill=school), data=data) +
   geom_segment(aes(x=V1,y=V2,xend=lon,yend=lat), data=solines, size=0.3) +
   geom_point(aes(lon, lat), color='black', size=2, data = re_schulstand_df %>% inner_join(solution, by=c('spatial_name'='school'))) +
@@ -312,7 +312,7 @@ library(formattable)
 ```
 
 ```{r}
-solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>%
+julia_solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from_blks, by=c('BLK'='BLK', 'school'='dst')) %>%
   group_by(school) %>% summarise(
     kids=sum(kids),
     num_blocks=n(),

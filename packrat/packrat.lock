@@ -246,6 +246,12 @@ Version: 0.2.0.1
 Hash: 64836860c4666eadc229c6e47fdd2261
 Requires: htmltools, htmlwidgets, knitr, rmarkdown
 
+Package: future
+Source: CRAN
+Version: 1.2.0
+Hash: 4a61ba667b624e0a96f488c58008e867
+Requires: digest, globals, listenv
+
 Package: geosphere
 Source: CRAN
 Version: 1.5-5
@@ -281,6 +287,12 @@ Package: git2r
 Source: CRAN
 Version: 0.16.0
 Hash: 8022c40f316e7b99258eb19969e2a11c
+
+Package: globals
+Source: CRAN
+Version: 0.7.1
+Hash: 861a5ea6928ef39a0ab10dacd26a109d
+Requires: codetools
 
 Package: gmapsdistance
 Source: CRAN
@@ -392,6 +404,11 @@ Version: 1.0.1
 Hash: 749ac8c776a57c686ab8c90b5a6818fb
 Requires: RColorBrewer, base64enc, htmltools, htmlwidgets, magrittr,
     markdown, png, raster, scales, sp
+
+Package: listenv
+Source: CRAN
+Version: 0.6.0
+Hash: fd36525dac9e5596ef644242a7845c3d
 
 Package: lubridate
 Source: CRAN

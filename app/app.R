@@ -9,9 +9,14 @@ library(ggplot2)
 library(shiny)
 library(DT)
 library(memoise)
+library(future)
+
+plan(multiprocess)
 
 options(shiny.autoreload=T)
 options(warn=-1)
+
+LOG='debug.log' # stderr()
 
 # Load data
 solution = read_rds('data/init_solution.rds') %>% select(BLK, school)
@@ -111,6 +116,7 @@ server <- function(input, output, session) {
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
     selected_block='', selected_school='', selected_school_index=NULL,
     running_optimization=FALSE,
+    ga_population_future=future(NULL),
     optimization_step=0,
     previous_mouseover='')
 
@@ -178,7 +184,8 @@ server <- function(input, output, session) {
       r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
       r$assignment_rev = r$assignment_rev + 1
 
-      add_current_to_ga_population()
+      # cancel optimization step (which is now invalid)
+      resetOptimization()
     }
   })
 
@@ -285,6 +292,14 @@ server <- function(input, output, session) {
 
     r$ga_population = list(current)
   }
+  
+  resetOptimization = function() {
+    cat('Resetting optimization before step', r$optimization_step, 'finished\n', file=stderr())
+    r$optimization_step = 0
+    # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
+    forget(mem_fitness_f)
+    add_current_to_ga_population()
+  }
 
   # main optimization loop
   observe({
@@ -295,32 +310,44 @@ server <- function(input, output, session) {
           add_current_to_ga_population()
         }
         
-        heuristic_exponent = 20/(1+r$optimization_step)^(1) # TODO = 1/2?
-        mutation_fraction = max(0.001, 1-r$optimization_step/3)
-        cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
-        r$ga_population = ga_select(
-          ga_breed(r$ga_population,
-                   fitness_f=mem_fitness_f,
-                   mutation_fraction=mutation_fraction,
-                   num_pairs = 50,
-                   num_mutants = 50,
-                   heuristic_exponent = heuristic_exponent),
-          mem_fitness_f,
-          max_population = 50)
-
-        fittest = r$ga_population[[1]]
-        r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
-
-        # update relevant values for ui updates
-        prev_schools = r$blocks$school
-        new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
-        r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
-        r$blocks$updated = r$blocks$school != prev_schools
-
-        r$assignment_rev = r$assignment_rev + 1
-        r$optimization_step = r$optimization_step + 1
+        # if there is a resolved ga_population_future take the result and update all the things, then start a new one
+        if (resolved(r$ga_population_future)) {
+          cat('Finished optimization step', r$optimization_step, '\n', file=stderr())
+          future_population = value(r$ga_population_future)
+          if (r$optimization_step > 0 && !is.null(future_population)) {
+            r$ga_population = future_population
+            
+            fittest = r$ga_population[[1]]
+            r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
+            
+            # update relevant values for ui updates
+            prev_schools = r$blocks$school
+            new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
+            r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
+            r$blocks$updated = r$blocks$school != prev_schools
+            
+            r$assignment_rev = r$assignment_rev + 1
+          }
+          
+          r$optimization_step = r$optimization_step + 1
+          heuristic_exponent = 20/r$optimization_step^(1) # TODO = 1/2?
+          mutation_fraction = max(0.001, 1-(r$optimization_step-1)/3)
+          cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
+          
+          r$ga_population_future = future({
+            ga_select(
+              ga_breed(r$ga_population,
+                       fitness_f=mem_fitness_f,
+                       mutation_fraction=mutation_fraction,
+                       num_pairs = 50,
+                       num_mutants = 50,
+                       heuristic_exponent = heuristic_exponent),
+              mem_fitness_f,
+              max_population = 50)
+          })  
+        } # otherwise just skip and do nothing in this iteration
       })
-      invalidateLater(500, session)
+      invalidateLater(100, session)
     } else {
       r$optimization_step = 0
       forget(mem_fitness_f)
@@ -375,7 +402,7 @@ server <- function(input, output, session) {
   ga_breed = function(population, fitness_f, num_pairs = 50, num_mutants = 100, mutation_fraction=0.001, heuristic_exponent=3) {
     # precalculate sampling weights for sampling from the fittest
     fitness = unlist(map(population, fitness_f))
-    cat('original population fitness', summary(fitness), '\n', file=stderr())
+    cat('original population fitness', summary(fitness), '\n', file=LOG)
     weights = -fitness+min(fitness)+max(fitness)
     prob = weights/sum(weights)
 
@@ -383,7 +410,7 @@ server <- function(input, output, session) {
     mutated = population %>%
       sample(num_mutants, replace = T, prob = prob) %>% # sample based on fitness
       map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
-    if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=stderr())
+    if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=LOG)
     
     mating_population = c(population, mutated)
     if (length(mating_population) > 1) {
@@ -391,10 +418,10 @@ server <- function(input, output, session) {
       mating_weights = -mating_fitness+min(mating_fitness)+max(mating_fitness)
       mating_prob = mating_weights/sum(mating_weights)
       
-      cat('Mating', num_pairs, 'pairs\n', file=stderr())
+      cat('Mating', num_pairs, 'pairs\n', file=LOG)
       pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob)) # sample based on fitness
       mated = do.call(c, map(pairs, ~ do.call(ga_crossover, .x)))
-      cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=stderr())
+      cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=LOG)
     } else {
       mated = list()
     }
@@ -409,11 +436,11 @@ server <- function(input, output, session) {
 
   # selects the fittest individuals according to a fitness function
   ga_select = function(population, fitness_f, survival_fraction=1, max_population=50) {
-    cat('Population size', length(population), '\n', file=stderr())
+    cat('Population size', length(population), '\n', file=LOG)
     population = sort_by(unique(population), fitness_f)
-    cat(length(population), 'unique\n', file=stderr())
+    cat(length(population), 'unique\n', file=LOG)
     num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
-    cat('Keeping', num_survivors, 'survivors\n', file=stderr())
+    cat('Keeping', num_survivors, 'survivors\n', file=LOG)
     #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
     survivors = population[1:num_survivors]
     survivors
@@ -424,22 +451,22 @@ server <- function(input, output, session) {
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 0.1
-    DIST_WEIGHT = 0.0005
+    DIST_WEIGHT = 1
     OVER_CAPACITY_WEIGHT = 1
     UNDER_CAPACITY_WEIGHT = 1
     individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       group_by(school) %>%
-      summarise(kids=sum(kids), Kapa=first(Kapa), avg=mean(avg^2)) %>%
+      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sqrt(mean(avg^2))) %>%
       #summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2*kids)) %>%
       rowwise() %>% mutate(over_capacity=max(1, kids-Kapa), under_capacity=max(1, Kapa-kids)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
-      summarise(avg=sum(avg), over_capacity_penalty=sum(over_capacity_penalty), under_capacity_penalty=sum(under_capacity_penalty)) %>%
+      summarise(avg=mean(avg), over_capacity_penalty=mean(over_capacity_penalty), under_capacity_penalty=mean(under_capacity_penalty)) %>%
       (function(x) {
         if (runif(1)<0) {
         #if (runif(1)<0.1) {
-          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=stderr())
-          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=stderr())
-          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=stderr())
+          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=LOG)
+          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=LOG)
+          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=LOG)
         }
         x
       }) %>%
