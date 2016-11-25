@@ -16,6 +16,8 @@ plan(multiprocess)
 options(shiny.autoreload=T)
 options(warn=-1)
 
+LOG='debug.log' # stderr()
+
 # Load data
 solution = read_rds('data/init_solution.rds') %>% select(BLK, school)
 blocks = read_rds('data/blocks.rds') %>% sp::merge(solution)
@@ -400,7 +402,7 @@ server <- function(input, output, session) {
   ga_breed = function(population, fitness_f, num_pairs = 50, num_mutants = 100, mutation_fraction=0.001, heuristic_exponent=3) {
     # precalculate sampling weights for sampling from the fittest
     fitness = unlist(map(population, fitness_f))
-    cat('original population fitness', summary(fitness), '\n', file=stderr())
+    cat('original population fitness', summary(fitness), '\n', file=LOG)
     weights = -fitness+min(fitness)+max(fitness)
     prob = weights/sum(weights)
 
@@ -408,7 +410,7 @@ server <- function(input, output, session) {
     mutated = population %>%
       sample(num_mutants, replace = T, prob = prob) %>% # sample based on fitness
       map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
-    if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=stderr())
+    if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=LOG)
     
     mating_population = c(population, mutated)
     if (length(mating_population) > 1) {
@@ -416,10 +418,10 @@ server <- function(input, output, session) {
       mating_weights = -mating_fitness+min(mating_fitness)+max(mating_fitness)
       mating_prob = mating_weights/sum(mating_weights)
       
-      cat('Mating', num_pairs, 'pairs\n', file=stderr())
+      cat('Mating', num_pairs, 'pairs\n', file=LOG)
       pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob)) # sample based on fitness
       mated = do.call(c, map(pairs, ~ do.call(ga_crossover, .x)))
-      cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=stderr())
+      cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=LOG)
     } else {
       mated = list()
     }
@@ -434,11 +436,11 @@ server <- function(input, output, session) {
 
   # selects the fittest individuals according to a fitness function
   ga_select = function(population, fitness_f, survival_fraction=1, max_population=50) {
-    cat('Population size', length(population), '\n', file=stderr())
+    cat('Population size', length(population), '\n', file=LOG)
     population = sort_by(unique(population), fitness_f)
-    cat(length(population), 'unique\n', file=stderr())
+    cat(length(population), 'unique\n', file=LOG)
     num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
-    cat('Keeping', num_survivors, 'survivors\n', file=stderr())
+    cat('Keeping', num_survivors, 'survivors\n', file=LOG)
     #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
     survivors = population[1:num_survivors]
     survivors
@@ -462,9 +464,9 @@ server <- function(input, output, session) {
       (function(x) {
         if (runif(1)<0) {
         #if (runif(1)<0.1) {
-          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=stderr())
-          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=stderr())
-          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=stderr())
+          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=LOG)
+          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=LOG)
+          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=LOG)
         }
         x
       }) %>%
