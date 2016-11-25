@@ -451,16 +451,16 @@ server <- function(input, output, session) {
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 0.1
-    DIST_WEIGHT = 0.0005
+    DIST_WEIGHT = 1
     OVER_CAPACITY_WEIGHT = 1
     UNDER_CAPACITY_WEIGHT = 1
     individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
       group_by(school) %>%
-      summarise(kids=sum(kids), Kapa=first(Kapa), avg=mean(avg^2)) %>%
+      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sqrt(mean(avg^2))) %>%
       #summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2*kids)) %>%
       rowwise() %>% mutate(over_capacity=max(1, kids-Kapa), under_capacity=max(1, Kapa-kids)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
-      summarise(avg=sum(avg), over_capacity_penalty=sum(over_capacity_penalty), under_capacity_penalty=sum(under_capacity_penalty)) %>%
+      summarise(avg=mean(avg), over_capacity_penalty=mean(over_capacity_penalty), under_capacity_penalty=mean(under_capacity_penalty)) %>%
       (function(x) {
         if (runif(1)<0) {
         #if (runif(1)<0.1) {
