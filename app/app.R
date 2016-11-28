@@ -19,10 +19,10 @@ options(warn=-1)
 LOG='debug.log' # stderr()
 
 # Load data
-solution = read_rds('data/init_solution.rds') %>% select(BLK, school)
+solution = read_rds('data/init_solution.rds') %>% select(BLK, school) %>% mutate_all(as.character)
 blocks = read_rds('data/blocks.rds') %>% sp::merge(solution)
 bez = read_rds('data/bez.rds')
-schools = read_rds('data/schools.rds')
+schools = read_rds('data/schools.rds') %>% mutate(spatial_name = as.character(spatial_name))
 block_stats = read_rds('data/block_stats.rds')
 kids_in_blocks = block_stats %>% group_by(BLK) %>% summarise(num_kids=first(kids))
 school_ids = unique(as.character(schools$spatial_name))
@@ -161,6 +161,7 @@ server <- function(input, output, session) {
     r$selected_block = ''
   })
 
+  # click on table row
   observe({
     row = input$table_rows_selected
     isolate({
