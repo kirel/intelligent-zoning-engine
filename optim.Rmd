@@ -43,10 +43,10 @@ TODO:
 
 ```{r load data, message=FALSE, warning=FALSE}
 sampled_buildings = read_rds('output/sampled_buildings.rds')
-bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON')
-blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON')
-lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON')
-re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON')
+bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 ```
 
 ### Schulwege
@@ -112,7 +112,7 @@ ggmap(map) + geom_point(aes(lon, lat, color=missing.capa), data=data) +
 Filter auf Schulen mit Kapazitätsinformationen (für T-S sind das alle):
 
 ```{r}
-relevant_schools = re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK==bezirk & !is.na(`Plätze`)) %>% .$spatial_name
+relevant_schools = re_schulstand_df_w_kapas %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK==bezirk & !is.na(`Plätze`)) %>% .$spatial_name
 relevant_schools
 ```
 
@@ -340,7 +340,10 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
 
 ### Neue Daten
 
-TODO
+```{r}
+solution %>% rename(unit_id=BLK, entity_id=school) %>% write_csv('app/data/assignment.csv')
+```
+
 
 ### Alte Daten
 
