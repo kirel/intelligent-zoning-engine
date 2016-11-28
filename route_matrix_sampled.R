@@ -19,7 +19,7 @@ re_schulstand_df = cbind(coordinates(re_schulstand), re_schulstand@data) %>%
   select(school_id=spatial_name, s_long=coords.x1, s_lat=coords.x2) %>%
   filter(grepl('G', school_id))
 
-sampled_buildings = read_csv('output/sampled_buildings.csv')
+sampled_buildings = read_rds('output/sampled_buildings.rds')
 
 
 `%after%` = function(a , b) {
@@ -59,6 +59,5 @@ routen_matrix = sampled_buildings %>% select(OI, long, lat) %>%
       inner_join(durations, distances, by=c('src', 'dst'))
     }
     }), .collate="rows", .labels=F)
-routen_matrix_1000=routen_matrix
 
-routen_matrix %>% write_csv('output/routen_matrix.csv')
+routen_matrix %>% write_rds('output/route_matrix.rds', 'gz')

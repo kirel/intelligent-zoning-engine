@@ -74,4 +74,4 @@ num_samples_per_block_varpn = samplesizes_n_stratified(residential_buildings_df,
 sampled_per_block_varpn = residential_buildings_df %>% inner_join(num_samples_per_block_varpn, by='BLK') %>%
   group_by(BLK) %>% do(sample_n(., first(.$chosen))) %>% ungroup()
 
-sampled_per_block_varpn %>% select(OI, long, lat, BLK) %>% write_csv('output/sampled_buildings.csv')
+sampled_per_block_varpn %>% select(OI, long, lat, BLK) %>% write_rds('output/sampled_buildings.rds', 'gz')

@@ -88,16 +88,16 @@ output/HKO_2015.geojson: download/HKO_2015_EPSG5650.txt HKO_2015.R
 	rm -f $@
 	Rscript HKO_2015.R
 
-output/sampled_buildings.csv: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
+output/sampled_buildings.rds: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
 	rm -f $@
 	Rscript sampled_buildings.R
 
-output/routen_matrix.csv: output/sampled_buildings.csv download/re_schulstand.geojson routen_matrix_sampled.R
+output/route_matrix.rds: output/sampled_buildings.rds download/re_schulstand.geojson route_matrix_sampled.R
 	rm -f $@
-	Rscript routen_matrix_sampled.R
+	Rscript route_matrix_sampled.R
 
-process: output/HKO_2015.geojson output/routen.geojson output/sampled_buildings.csv output/routen_matrix.csv
+process: output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
 
-optim.nb.html: optim.Rmd
+optim.nb.html: optim.Rmd output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
 	Rscript -e "rmarkdown::render('optim.Rmd')"
 app_data: optim.nb.html
