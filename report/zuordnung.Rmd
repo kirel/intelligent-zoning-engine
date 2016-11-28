@@ -12,6 +12,31 @@ params:
 ---
 
 ```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+#' Export a Formattable as PNG, PDF, or JPEG
+#'
+#' @param f A formattable.
+#' @param file Export path with extension .png, .pdf, or .jpeg.
+#' @param width Width specification of the html widget being exported.
+#' @param height Height specification of the html widget being exported.
+#' @param background Background color specification.
+#' @param delay Time to wait before taking webshot, in seconds.
+#'
+#' @importFrom formattable as.htmlwidget
+#' @importFrom htmltools html_print
+#' @importFrom webshot webshot
+#'
+#' @export
+export_formattable <- function(f, file, width = "100%", height = NULL, 
+                               background = "white", delay = 0.2)
+{
+  w <- formattable::as.htmlwidget(f, width = width, height = height)
+  path <- htmltools::html_print(w, background = background, viewer = NULL)
+  url <- paste0("file:///", gsub("\\\\", "/", normalizePath(path)))
+  webshot::webshot(url,
+          file = file,
+          selector = ".formattable_widget",
+          delay = delay)
+}
 ```
 
 ## Kartendarstellung der Einzugsbereiche
@@ -36,19 +61,22 @@ ggmap::ggmap(params$map) +
 knitr::kable(params$school_stats)
 ```
 
-```{r pretty_table, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-#formattable(table_data,
-#  list(
-#    Kinder = formatter("span", x ~ digits(x, 2)),
-#    Auslastung = formatter("span",
-#      style = x ~ style(color = ifelse(x < 1, "green", "red")),
-#      x ~ icontext(ifelse(x < 1, "ok", "remove"), percent(x))
-#    ),
-#    `Weg (Ø)` = proportion_bar("lightblue"),
-#    `Weg (min)` = proportion_bar("lightblue"),
-#    `Weg (max)` = proportion_bar("lightblue")
-#  )
-#)
+```{r pretty_table, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+pretty_table <- formattable::formattable(table_data,
+  list(
+    Kinder = formattable::formatter("span", x ~ formattable::digits(x, 2)),
+    Auslastung = formattable::formatter("span",
+      style = x ~ formattable::style(color = ifelse(x < 1, "green", "red")),
+      x ~ formattable::icontext(ifelse(x < 1, "ok", "remove"), formattable::percent(x))
+    ),
+    `Weg (Ø)` = formattable::proportion_bar("lightblue"),
+    `Weg (min)` = formattable::proportion_bar("lightblue"),
+    `Weg (max)` = formattable::proportion_bar("lightblue")
+  )
+)
+tmp_path <- file.path(getwd(), "table.png")
+export_formattable(pretty_table, tmp_path)
+knitr::include_graphics(tmp_path)
 ```
 
 ## Schulen-Blöcke-Zuordnung
