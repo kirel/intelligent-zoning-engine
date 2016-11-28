@@ -1,0 +1,61 @@
+---
+title: "Schule-Block-Zuordnung"
+author: "idalab GmbH"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output: pdf_document
+params:
+  map: ""
+  blocks: ""
+  schools: ""
+  school_stats: ""
+  school_blocks: "" 
+---
+
+```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+```
+
+## Kartendarstellung der Einzugsbereiche
+
+```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+ggmap::ggmap(params$map) +
+  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group, fill = 'school'),
+                        data = params$blocks) +
+  ggplot2::geom_point(mapping = aes(x = lon, y = lat),
+                      data = params$schools) +
+  ggplot2::coord_quickmap(xlim = params$blocks@bbox["x",] + c(-0.01, 0.01),
+                          ylim = params$blocks@bbox["y",] + c(-0.01, 0.01),
+                          expand = FALSE) +
+  ggplot2::scale_fill_brewer(palette = "Set1") +
+  ggplot2::guides(color = FALSE,
+                  fill = FALSE)
+```
+
+## Statistik zu den Einzugsbereichen
+
+```{r stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+knitr::kable(params$school_stats)
+```
+
+```{r pretty_table, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+#formattable(table_data,
+#  list(
+#    Kinder = formatter("span", x ~ digits(x, 2)),
+#    Auslastung = formatter("span",
+#      style = x ~ style(color = ifelse(x < 1, "green", "red")),
+#      x ~ icontext(ifelse(x < 1, "ok", "remove"), percent(x))
+#    ),
+#    `Weg (Ø)` = proportion_bar("lightblue"),
+#    `Weg (min)` = proportion_bar("lightblue"),
+#    `Weg (max)` = proportion_bar("lightblue")
+#  )
+#)
+```
+
+## Schulen-Blöcke-Zuordnung
+
+```{r solution, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+for (i in 1:nrow(params$school_blocks)) {
+  cat("**", params$school_blocks[[i, "school"]], ":**\n", sep = "")
+  cat(params$school_blocks[[i, "blocks"]], "\n\n", sep = "")
+}
+```
