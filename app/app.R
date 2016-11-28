@@ -18,52 +18,59 @@ options(warn=-1)
 
 LOG='debug.log' # stderr()
 
+NONE_SELECTED = '__NONE_SELECTED__'
+NO_ASSIGNMENT = NONE_SELECTED
+
 # Load data
-solution = read_rds('data/init_solution.rds') %>% select(BLK, school) %>% mutate_all(as.character)
-blocks = read_rds('data/blocks.rds') %>% sp::merge(solution)
-bez = read_rds('data/bez.rds')
-schools = read_rds('data/schools.rds') %>% mutate(spatial_name = as.character(spatial_name))
-block_stats = read_rds('data/block_stats.rds')
-kids_in_blocks = block_stats %>% group_by(BLK) %>% summarise(num_kids=first(kids))
-school_ids = unique(as.character(schools$spatial_name))
-block_ids = unique(as.character(blocks$BLK))
+units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+weights = read_csv('data/weights.csv')
 
-# Prepare data
-blocks[is.na(blocks$school),'school'] = ''
-# takes blocks spdf and returns new school assignments
-school_ids = as.character(schools$spatial_name)
-block_ids = unique(as.character(block_stats$BLK)) # blocks with stats
+assignment = units@data %>%
+  select(unit_id) %>%
+  left_join(read_csv('data/assignment.csv')) %>%
+  mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id)) # FIXME necessary?
 
-# An individual is an assignment data frame BLK->school
-# every gene is an assignment BLK->school
+units = units %>% sp::merge(assignment)
+
+rm(assignment)
+
+bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE) %>% subset(BEZ == '07')
+
+entity_ids = unique(entities$entity_id)
+unit_ids = unique(units$unit_id)
+
+### Helper functions
 
 # preferrably sample blocks closer to the school
 # should be higher for smaller numbers
-distance_sample_weights = block_ids %>% map(function(block_id) {
-  idx = block_stats$BLK == block_id
-  avg = as.double(block_stats[idx,]$avg)
-  school = block_stats[idx,]$dst
+distance_sample_weights = unit_ids %>% map(function(unit_id) {
+  idx = weights$unit_id == unit_id
+  avg = as.double(weights[idx,]$avg)
+  entity_ids = weights[idx,]$entity_id
   # TODO make function and divide exponent by optimization step
   weights = (1-(avg-min(avg))/max(avg-min(avg)))^3
-  set_names(weights, school)
-}) %>% set_names(block_ids)
+  set_names(weights, entity_ids)
+}) %>% set_names(unit_ids)
 
-distance_sample_probs = function(block, heuristic_exponent=3) {
-  weights = distance_sample_weights[[block]]
+distance_sample_probs = function(unit_id, heuristic_exponent=3) {
+  weights = distance_sample_weights[[unit_id]]
   pot_weights = weights^heuristic_exponent
   pot_weights/sum(pot_weights)
 }
 
-block_index = set_names(1:length(blocks$BLK), blocks$BLK)
-blocks$selected = T # when the shool is selected
-blocks$updated = F
-schools$selected = T
-schools$updated = F
+unit_index = set_names(1:length(units$unit_id), units$unit_id)
+
+# when a unit/entity is selected it is not desaturated
+units$selected = T
+units$updated = F
+entities$selected = T
+entities$updated = F
 
 # Scales
-cfac = colorFactor(rainbow(length(school_ids)), levels=sample(school_ids))
-school_colors = function(school_id, desaturate) {
-  color = cfac(school_id)
+cfac = colorFactor(rainbow(length(entity_ids)), levels=sample(entity_ids))
+entity_colors = function(entity_id, desaturate) {
+  color = cfac(entity_id)
   ifelse(desaturate, desat(color, 0.2), color)
 }
 
@@ -93,8 +100,8 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
-      uiOutput('school'),
-      #uiOutput('block'),
+      uiOutput('entity'),
+      #uiOutput('unit'),
       uiOutput('optimize', inline = TRUE),
       actionButton('randomize', 'Randomisieren'),
       plotOutput('fitness', height = '150px')
@@ -112,13 +119,13 @@ server <- function(input, output, session) {
   ### Reactive Values
 
   r <- reactiveValues(
-    blocks=blocks, schools=schools,
+    units=units, entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
-    selected_block='', selected_school='', selected_school_index=NULL,
+    selected_unit=NONE_SELECTED, selected_entity=NONE_SELECTED, selected_entity_index=NULL,
     running_optimization=FALSE,
     ga_population_future=future(NULL),
     optimization_step=0,
-    previous_mouseover='')
+    previous_mouseover=NONE_SELECTED)
 
   ### Interaction
 
@@ -137,17 +144,17 @@ server <- function(input, output, session) {
       # run this again and only set selected block if we're over the same shape after 100ms
       r$previous_mouseover = input$map_shape_mouseover$id
       invalidateLater(100, session)
-    } else if (grepl('block_', input$map_shape_mouseover$id)) {
+    } else if (grepl('unit_', input$map_shape_mouseover$id)) {
       # select the respective block
-      r$selected_block = substring(input$map_shape_mouseover$id, 7)
+      r$selected_unit = substring(input$map_shape_mouseover$id, 6) # FIXME stattdessen sub('unit_', '', ...)?
     }
   })
 
   observeEvent(input$map_shape_mouseout, {
     req(input$map_shape_mouseout$id)
-    if (grepl('block_', input$map_shape_mouseout$id)) {
+    if (grepl('unit_', input$map_shape_mouseout$id)) {
       # deselect the respective block
-      r$selected_block = ''
+      r$selected_block = NONE_SELECTED
     }
   })
 
@@ -155,34 +162,35 @@ server <- function(input, output, session) {
   observeEvent(input$map_marker_click, {
     req(input$map_marker_click$id)
     clicked_marker = input$map_marker_click$id
-    r$selected_school = ifelse(clicked_marker == isolate(r$selected_school), '', clicked_marker)
-    index = schools$spatial_name %>% detect_index(~ .x == r$selected_school)
-    if (is.null(index) | index == 0) r$selected_school_index = NULL else r$selected_school_index = index
-    r$selected_block = ''
+    r$selected_entity = ifelse(clicked_marker == isolate(r$selected_entity), NONE_SELECTED, clicked_marker)
+    index = entities$entity_id %>% detect_index(~ .x == r$selected_entity)
+    if (is.null(index) | index == 0) r$selected_entity_index = NULL else r$selected_entity_index = index
+    r$selected_unit = NONE_SELECTED
   })
 
   # click on table row
   observe({
     row = input$table_rows_selected
     isolate({
-      r$selected_school_index = row
-      r$selected_school = ifelse(is.null(row), '', schools$spatial_name[row])
-      r$selected_block = ''
+      r$selected_entity_index = row
+      r$selected_entity = ifelse(is.null(row), NONE_SELECTED, entities$entity_id[row])
+      r$selected_unit = NONE_SELECTED
     })
   })
 
   # click on shapes -> update the solution
   observeEvent(input$map_shape_click, {
-    if (grepl('block_', input$map_shape_click$id)) {
+    if (grepl('unit_', input$map_shape_click$id)) {
       # a block was clicked
-      clicked_block = sub('block_', '', input$map_shape_click$id)
-      r$selected_block = clicked_block
+      clicked_unit = sub('unit_', '', input$map_shape_click$id)
+      r$selected_unit = clicked_unit
       # update the solution
-      currently_assigned_school = r$blocks[r$blocks$BLK == r$selected_block,]$school
-      r$blocks[r$blocks$BLK == r$selected_block, 'school'] = ifelse(r$selected_school != currently_assigned_school, r$selected_school, '')
-      r$blocks$updated = F
-      r$blocks[r$blocks$BLK == r$selected_block, 'updated'] = T
-      r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
+      currently_assigned_entity = r$units[r$units$unit_id == r$selected_unit,]$entity_id
+      # FIXME 3 times indexing the same thing - can this be faster?
+      r$units[r$units$unit_id == r$selected_unit, 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NONE_SELECTED)
+      r$units$updated = F
+      r$units[r$units$unit_id == r$selected_unit, 'updated'] = T
+      r$units[r$units$unit_id == r$selected_unit, 'selected'] = T
       r$assignment_rev = r$assignment_rev + 1
 
       # cancel optimization step (which is now invalid)
@@ -192,16 +200,16 @@ server <- function(input, output, session) {
 
   # school selection changed - update blocks
   observe({
-    selected_school = r$selected_school
+    selected_entity = r$selected_entity
     isolate({
-      schools_selected_before = r$schools$selected
-      r$schools$selected = selected_school == ''
-      r$schools[r$schools$spatial_name == selected_school, 'selected'] = T
-      r$schools$updated = r$schools$updated | (r$schools$selected != schools_selected_before)
-      blocks_selected_before = r$blocks$selected
-      r$blocks$selected = selected_school == ''
-      r$blocks[r$blocks$school == selected_school, 'selected'] = T
-      r$blocks$updated = r$blocks$updated | (r$blocks$selected != blocks_selected_before)
+      entities_selected_before = r$entities$selected
+      r$entities$selected = selected_entity == NONE_SELECTED # if nothing is selected all are selected
+      r$entities[r$entities$entity_id == selected_entity, 'selected'] = T
+      r$entities$updated = r$entities$updated | (r$entities$selected != entities_selected_before)
+      units_selected_before = r$units$selected
+      r$units$selected = selected_entity == NONE_SELECTED # if nothing is selected all are selected
+      r$units[r$units$entity_id == selected_entity, 'selected'] = T
+      r$units$updated = r$units$updated | (r$units$selected != units_selected_before)
     })
   })
 
@@ -214,12 +222,12 @@ server <- function(input, output, session) {
       addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
       addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
       addPolygons(
-        data=isolate(r$blocks), group='blocks', layerId=~paste0('block_',BLK),
-        stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~school_colors(school, !selected)
+        data=isolate(r$units), group='units', layerId=~paste0('unit_', unit_id),
+        stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, !selected)
         ) %>%
       addCircleMarkers(
-        data=isolate(r$schools), group='schools', layerId=~spatial_name,
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
+        data=isolate(r$entities), group='entities', layerId=~entity_id,
+        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, !selected)
         )
     m
 
@@ -227,40 +235,40 @@ server <- function(input, output, session) {
 
   # incremental map update
   observe({
-    updated_blocks = r$blocks[r$blocks$updated,]
-    if (nrow(updated_blocks) > 0) {
+    updated_units = r$units[r$units$updated,]
+    if (nrow(updated_units) > 0) {
       leafletProxy("map") %>%
         addPolygons(
-          data=updated_blocks, group='blocks', layerId=~paste0('block_',BLK),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~school_colors(school, !selected)
+          data=updated_units, group='units', layerId=~paste0('unit_', unit_id),
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, !selected)
         )
     }
     leafletProxy("map") %>%
       addCircleMarkers(
-        data=r$schools, group='schools', layerId=~spatial_name,
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
+        data=r$entities, group='entities', layerId=~entity_id,
+        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, !selected)
       )
-    r$blocks$updated = F
-    r$schools$updated = F
+    r$units$updated = F
+    r$entities$updated = F
   })
 
   # block highlight marker
   observe({
-    if (r$selected_block != '') {
-      highlighted_block = r$blocks[block_index[r$selected_block],]
+    if (r$selected_unit != NONE_SELECTED) {
+      highlighted_unit = r$units[unit_index[r$selected_unit],]
       leafletProxy("map") %>%
-        addPolylines(data=highlighted_block, color='red', weight=4, layerId='highlighted_block') %>%
+        addPolylines(data=highlighted_unit, color='red', weight=4, layerId='highlighted_unit') %>%
         addPolygons(
-          data=highlighted_block, group='blocks', layerId=~paste0('block_',BLK),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~school_colors(school, !selected)
+          data=highlighted_unit, group='units', layerId=~paste0('unit_', unit_id),
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, !selected)
         ) %>%
         addCircleMarkers(
-          data=r$schools, group='schools', layerId=~spatial_name,
-          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
+          data=r$entities, group='entities', layerId=~entity_id,
+          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, !selected)
         )
     } else {
       leafletProxy("map") %>%
-        removeShape('highlighted_block')
+        removeShape('highlighted_unit')
     }
   })
 
@@ -295,6 +303,7 @@ server <- function(input, output, session) {
   }
   
   resetOptimization = function() {
+    return() # FIXME
     cat('Resetting optimization before step', r$optimization_step, 'finished\n', file=stderr())
     r$optimization_step = 0
     # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
@@ -304,6 +313,7 @@ server <- function(input, output, session) {
 
   # main optimization loop
   observe({
+    return() # FIXME
     if (r$running_optimization) {
       isolate({
         # if there is no population to iterate on
@@ -481,60 +491,59 @@ server <- function(input, output, session) {
   ### table
 
   reactive_table_data = reactive({
-    r$assignment_rev # recalculate of assignment_rev is altered
-    data = isolate(r$blocks) %>% as.data.frame() %>%
-      mutate(school=ifelse(school == '', 'Keine', school))
+    r$assignment_rev # recalculate if assignment_rev is altered
+    data = isolate(r$units) %>% as.data.frame() %>%
+      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id))
 
+    # alternative data for hovered unit
     alternative = data
-    if (r$selected_block != '') {
-      currently_assigned_school = alternative[block_index[r$selected_block],]$school
-      alternative[block_index[r$selected_block], 'school'] = ifelse(r$selected_school != currently_assigned_school, r$selected_school, '')
-      alternative = alternative %>% mutate(school=ifelse(school == '', 'Keine', school))
+    if (r$selected_unit != NONE_SELECTED) {
+      currently_assigned_entity = alternative[unit_index[r$selected_unit],]$entity_id
+      alternative[unit_index[r$selected_unit], 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NO_ASSIGNMENT)
+      alternative = alternative %>% mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id))
     }
-
+    
     table_data = data %>%
-      left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      left_join(kids_in_blocks, by='BLK') %>%
-      group_by(school) %>% summarise(
-        kids=sum(num_kids, na.rm=T),
-        num_blocks=n(),
-        min_time=min(min, na.rm=T),
-        avg_time=mean((kids*avg)/sum(kids, na.rm=T), na.rm=T),
-        max_time=max(max, na.rm=T),
-        Kapa=first(Kapa)
+      left_join(weights) %>%
+      group_by(entity_id) %>% summarise(
+        num_units=n(),
+        min_dist=min(min, na.rm=T),
+        avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
+        max_dist=max(max, na.rm=T),
+        pop=sum(population, na.rm=T)
       ) %>%
+      left_join(entities@data %>% select(entity_id, capacity)) %>%
       mutate(
-        utilization=kids/Kapa
+        utilization=pop/capacity
       )
 
     alternative_table_data = alternative %>%
-      left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      left_join(kids_in_blocks, by='BLK') %>%
-      group_by(school) %>% summarise(
-        kids=sum(num_kids, na.rm=T),
-        num_blocks=n(),
-        min_time=min(min, na.rm=T),
-        avg_time=mean((kids*avg)/sum(kids, na.rm=T), na.rm=T),
-        max_time=max(max, na.rm=T),
-        Kapa=first(Kapa)
+      left_join(weights) %>%
+      group_by(entity_id) %>% summarise(
+        num_units=n(),
+        min_dist=min(min, na.rm=T),
+        avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
+        max_dist=max(max, na.rm=T),
+        pop=sum(population, na.rm=T)
       ) %>%
+      left_join(entities@data %>% select(entity_id, capacity)) %>%
       mutate(
-        utilization=kids/Kapa
+        utilization=pop/capacity
       )
 
-    diff = select(alternative_table_data, -school) - select(table_data, -school)
+    diff = select(alternative_table_data, -entity_id) - select(table_data, -entity_id) # FIXME how is sorting ensured?
 
     table_data['delta_utilization'] = diff$utilization
     table_data %>%
       select(
-        Schule=school,
-        Kapazität=Kapa,
-        Kinder=kids,
+        Schule=entity_id,
+        Kapazität=capacity,
+        Kinder=pop,
         Auslastung=utilization,
         `ΔAusl.`=delta_utilization,
-        `Weg (min)`=min_time,
-        `Weg (Ø)`=avg_time,
-        `Weg (max)`=max_time
+        `Weg (min)`=min_dist,
+        `Weg (Ø)`=avg_dist,
+        `Weg (max)`=max_dist
       )
 
   })
@@ -602,22 +611,22 @@ server <- function(input, output, session) {
   })
 
   observe({
-    tableProxy %>% selectRows(r$selected_school_index)
+    tableProxy %>% selectRows(r$selected_entity_index)
   })
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
 
-  output$school = renderUI({
-    if (r$selected_school == '') {
+  output$entity = renderUI({
+    if (r$selected_entity == NONE_SELECTED) {
       div(h4('Keine Schule ausgewählt'))
     } else {
-      school = schools %>% filter(spatial_name == r$selected_school)
-      div(h4(paste(r$selected_school, school$SCHULNAME)))
+      entity = entities@data %>% filter(entity_id == r$selected_entity)
+      div(h4(paste(r$selected_entity, entity$SCHULNAME)))
     }
   })
 
-  output$block = renderUI({
-    div(h4(r$selected_block))
+  output$unit = renderUI({
+    div(h4(r$selected_unit))
   })
 
   output$optimize = renderUI({

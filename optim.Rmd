@@ -340,20 +340,58 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
 
 ### Neue Daten
 
+
+#### Entities / Schulen
+
 ```{r}
-solution %>% rename(unit_id=BLK, entity_id=school) %>% write_csv('app/data/assignment.csv')
+entities = subset(re_schulstand_df, spatial_name %in% relevant_schools) %>%
+  rename(entity_id = spatial_name) %>%
+  select(-gml_id, -spatial_alias, -spatial_type) %>%
+  inner_join(rename(relevant_kapas, capacity=Kapa), by=c('entity_id'='Schulnummer'))
+coordinates(entities) = ~ lon + lat
+proj4string(entities) = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+file.remove('app/data/entities.geojson')
+entities %>% writeOGR('app/data/entities.geojson', layer="entities", driver="GeoJSON", check_exists=F)
+entities@data %>% select(entity_id, capacity) %>% write_csv('app/data/entities.csv')
 ```
 
-
-### Alte Daten
+#### Units / Statistische Blöcke
 
 ```{r}
-write_rds(solution, 'app/data/init_solution.rds', 'gz')
-write_rds(subset(blk, BEZ == bez_id), 'app/data/blocks.rds', 'gz')
-write_rds(subset(re_schulstand_df, spatial_name %in% relevant_schools), 'app/data/schools.rds', 'gz')
-write_rds(subset(bez, BEZ == bez_id), 'app/data/bez.rds', 'gz')
+units = subset(blk, BEZ == bez_id)
 
-block_stats = optim_kids_in_blks %>% inner_join(travel_from_blks, by=c('BLK'='BLK')) %>% inner_join(relevant_kapas, by=c('dst'='Schulnummer')) %>% inner_join(re_schulstand_df, by=c('dst'='spatial_name'))
-write_rds(block_stats, 'app/data/block_stats.rds', 'gz')
+units@data$PLR = NULL
+units@data$Einw = NULL
+units@data$BEZ = NULL
+units@data$unit_id = units@data$BLK
+units@data$BLK = NULL
+
+units = units %>% sp::merge(optim_kids_in_blks %>% select(unit_id=BLK, population=kids))
+
+file.remove('app/data/units.geojson')
+units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
+units@data %>% write_csv('app/data/units.csv')
+```
+
+#### Zuordnung
+
+```{r}
+assignment = solution %>% select(unit_id=BLK, entity_id=school)
+assignment %>% write_csv('app/data/assignment.csv')
+```
+
+#### Weights / Schulwege
+
+```{r}
+travel_from_blks %>%
+  rename(unit_id=BLK, entity_id=dst) %>%
+  #gather(weight, value, -unit_id, -entity_id) %>%
+  write_csv('app/data/weights.csv')
+```
+
+#### Zusätzliche Daten
+
+```{r}
+file.copy('download/RBS_OD_BEZ_2015_12.geojson', 'app/data/RBS_OD_BEZ_2015_12.geojson')
 ```
 
