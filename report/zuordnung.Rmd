@@ -74,7 +74,7 @@ pretty_table <- formattable::formattable(table_data,
     `Weg (max)` = formattable::proportion_bar("lightblue")
   )
 )
-tmp_path <- file.path(getwd(), "table.png")
+tmp_path <- tempfile(pattern = "table_", fileext = ".png")
 export_formattable(pretty_table, tmp_path)
 knitr::include_graphics(tmp_path)
 ```

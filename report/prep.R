@@ -3,6 +3,13 @@
 suppressPackageStartupMessages(library(readr))
 suppressPackageStartupMessages(library(rgdal))
 suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(formattable))
+suppressPackageStartupMessages(library(webshot))
+suppressPackageStartupMessages(library(htmltools))
+suppressPackageStartupMessages(library(ggmap))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(knitr))
+suppressPackageStartupMessages(library(rmarkdown))
 
 # Globals -----------------------------------------------------------------
 
@@ -12,14 +19,14 @@ data_path <- file.path(root, "app", "data")
 # Data Loading ------------------------------------------------------------
 
 solution = readr::read_rds(file.path(data_path, "init_solution.rds")) %>%
-  select(BLK, school) %>%
-  mutate_all(as.character)
+  dplyr::select(BLK, school) %>%
+  dplyr::mutate_all(as.character)
 
 blocks = readr::read_rds(file.path(data_path, "blocks.rds")) %>%
   sp::merge(solution)
 
 schools = read_rds(file.path(data_path, "schools.rds")) %>%
-  mutate(spatial_name = as.character(spatial_name))
+  dplyr::mutate(spatial_name = as.character(spatial_name))
 
 block_stats = readr::read_rds(file.path(data_path, "block_stats.rds"))
 
