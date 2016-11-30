@@ -20,6 +20,15 @@ Folder structure is as follows:
 - figs – contains generated graphics/reports (disposable)
 - . – contains Notebooks and R Scripts that do stuff (many of them will be run by `make` targets)
 
+## Other Requirements
+
+(on Ubuntu 16.04)
+
+    libcurl-dev
+    libv8-dev
+    libgdal-dev
+    libproj-dev
+
 ### OSRM
 
 	cd osrm
