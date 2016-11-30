@@ -294,16 +294,15 @@ server <- function(input, output, session) {
   # see main optimization loop
   add_current_to_ga_population = function() {
     # select only blocks with stats and assign random schools for unassigned blocks
-    current = blocks %>% as.data.frame() %>%
-      filter(BLK %in% block_ids) %>%
-      select(BLK) %>% left_join(r$blocks %>% as.data.frame() %>% select(BLK, school), by='BLK') %>%
-      mutate(school=ifelse(school == '', sample(school_ids, length(is.na(school)), replace = T), school))
+    current = units %>% as.data.frame() %>%
+      filter(unit_id %in% unit_ids) %>%
+      select(unit_id) %>% left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id), by='unit_id') %>%
+      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
 
     r$ga_population = list(current)
   }
   
   resetOptimization = function() {
-    return() # FIXME
     cat('Resetting optimization before step', r$optimization_step, 'finished\n', file=stderr())
     r$optimization_step = 0
     # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
