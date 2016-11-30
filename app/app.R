@@ -276,14 +276,14 @@ server <- function(input, output, session) {
 
   # Randomize (to test optimization)
   observeEvent(input$randomize, {
-    random = blocks %>% as.data.frame() %>%
-      filter(BLK %in% block_ids) %>%
-      select(BLK, school) %>%
-      mutate(school=sample(school_ids, nrow(.), replace = T))
+    random = units %>% as.data.frame() %>%
+      filter(unit_id %in% unit_ids) %>%
+      select(unit_id, entity_id) %>%
+      mutate(entity_id=sample(entity_ids, nrow(.), replace = T))
 
-    new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(random, by="BLK") %>% .$school
-    r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
-    r$blocks$updated = T
+    new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(random, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NO_ASSIGNMENT, new_entities)
+    r$units$updated = T
 
     r$ga_population = list(random)
 
