@@ -13,22 +13,28 @@ suppressPackageStartupMessages(library(rmarkdown))
 
 # Globals -----------------------------------------------------------------
 
-root <- "~/Work/Idalab/intelligent-zoning-engine"
+root <- "/home/shwifty/Work/Idalab/intelligent-zoning-engine"
 data_path <- file.path(root, "app", "data")
+NONE_SELECTED = '__NONE_SELECTED__'
+NO_ASSIGNMENT = NONE_SELECTED
 
 # Data Loading ------------------------------------------------------------
 
-solution = readr::read_rds(file.path(data_path, "init_solution.rds")) %>%
-  dplyr::select(BLK, school) %>%
-  dplyr::mutate_all(as.character)
+units = rgdal::readOGR(file.path(data_path, 'units.geojson'),
+                layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+entities = rgdal::readOGR(file.path(data_path, 'entities.geojson'),
+                          layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+weights = readr::read_csv(file.path(data_path, 'weights.csv'))
 
-blocks = readr::read_rds(file.path(data_path, "blocks.rds")) %>%
-  sp::merge(solution)
+assignment = units@data %>%
+  dplyr::select(unit_id) %>%
+  dplyr::left_join(read_csv(file.path(data_path, 'assignment.csv'))) %>%
+  dplyr::mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id)) # FIXME necessary?
 
-schools = read_rds(file.path(data_path, "schools.rds")) %>%
-  dplyr::mutate(spatial_name = as.character(spatial_name))
-
-block_stats = readr::read_rds(file.path(data_path, "block_stats.rds"))
+bez = readOGR(file.path(data_path, 'RBS_OD_BEZ_2015_12.geojson'),
+              layer = 'OGRGeoJSON',
+              stringsAsFactors = FALSE) %>%
+  subset(BEZ == '07')
 
 # Data Wrangling ----------------------------------------------------------
 
@@ -69,20 +75,14 @@ block_school <- solution %>%
 
 # Map ---------------------------------------------------------------------
 
-map_path <- file.path(data_path, "berlin.rds")
-if (file.exists(map_path)) {
-  berlin <- readr::read_rds(map_path)
-} else {
-  berlin <- ggmap::get_map("Berlin")
-  readr::write_rds(berlin, map_path, compress = "gz")
-}
+berlin <- ggmap::get_map("Berlin")
 
 # Render Report -----------------------------------------------------------
 
 rmarkdown::render(file.path(root, "report", "zuordnung.Rmd"), params = list(
   map = berlin,
-  blocks = blocks,
-  schools = schools,
+  blocks = units,
+  schools = entities,
   school_stats = table_data,
-  school_blocks = block_school
+  school_blocks = assignment
 ))
