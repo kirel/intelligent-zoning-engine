@@ -8,8 +8,8 @@ params:
   map: ""
   units: ""
   entities: ""
-  entity_stats: ""
   assignment: "" 
+  NO_ASSIGNMENT: ""
 ---
 
 ```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -22,9 +22,9 @@ tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
   dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
   dplyr::select(entity_id, group, long, lat)
 tmp_shown = tmp_units %>%
-  dplyr::filter(entity_id != "__NONE_SELECTED__")
+  dplyr::filter(entity_id != NO_ASSIGNMENT)
 tmp_unassigned = tmp_units %>%
-  dplyr::filter(entity_id == "__NONE_SELECTED__")
+  dplyr::filter(entity_id == NO_ASSIGNMENT)
 tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
@@ -58,8 +58,27 @@ ggmap::ggmap(params$map) +
 
 ## Statistik zu den Einzugsbereichen
 
+```{r entity_stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+data = params$units %>%
+  as.data.frame() %>%
+  mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT, 'Keine', entity_id))
+
+table_data = data %>%
+  dplyr::left_join(weights) %>%
+  dplyr::group_by(entity_id) %>%
+  dplyr::summarise(
+    num_units=n(),
+    min_dist=min(min, na.rm=T),
+    avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
+    max_dist=max(max, na.rm=T),
+    pop=sum(population, na.rm=T)
+  ) %>%
+  dplyr::left_join(params$entities@data %>% select(entity_id, capacity)) %>%
+  dplyr::mutate(utilization = pop / capacity)
+```
+
 ```{r stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-knitr::kable(params$entity_stats)
+knitr::kable(table_data)
 ```
 
 ```{r pretty_table, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}

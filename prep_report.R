@@ -32,30 +32,6 @@ assignment = units@data %>%
 
 units = units %>% sp::merge(assignment)
 
-bez = readOGR(file.path(data_path, 'RBS_OD_BEZ_2015_12.geojson'),
-              layer = 'OGRGeoJSON',
-              stringsAsFactors = FALSE) %>%
-  subset(BEZ == '07')
-
-# Data Wrangling ----------------------------------------------------------
-
-data = units %>%
-  as.data.frame() %>%
-  mutate(entity_id = ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id))
-
-table_data = data %>%
-  dplyr::left_join(weights) %>%
-  dplyr::group_by(entity_id) %>%
-  dplyr::summarise(
-    num_units=n(),
-    min_dist=min(min, na.rm=T),
-    avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
-    max_dist=max(max, na.rm=T),
-    pop=sum(population, na.rm=T)
-  ) %>%
-  dplyr::left_join(entities@data %>% select(entity_id, capacity)) %>%
-  dplyr::mutate(utilization = pop / capacity)
-
 # Map ---------------------------------------------------------------------
 
 berlin <- ggmap::get_map("Berlin")
@@ -68,7 +44,7 @@ rmarkdown::render(
     map = berlin,
     units = units,
     entities = entities,
-    entity_stats = table_data,
-    assignment = assignment
+    assignment = assignment,
+    NO_ASSIGNMENT = NO_ASSIGNMENT
   )
 )
