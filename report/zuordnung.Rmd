@@ -3,6 +3,7 @@ title: "Schule-Block-Zuordnung"
 author: "idalab GmbH"
 date: '`r format(Sys.time(), "%B %d, %Y")`'
 output: pdf_document
+classoption: a4paper
 params:
   map: ""
   units: ""
@@ -16,25 +17,43 @@ params:
 
 ## Kartendarstellung der Einzugsbereiche
 
-```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.align='center', out.extra='keepaspectratio', fig.height=8.5}
 tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
   dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
   dplyr::select(entity_id, group, long, lat)
-tmp_entities <- params$entities %>%
-  as.data.frame() %>%
+tmp_shown = tmp_units %>%
+  dplyr::filter(entity_id != "__NONE_SELECTED__")
+tmp_unassigned = tmp_units %>%
+  dplyr::filter(entity_id == "__NONE_SELECTED__")
+tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
 ggmap::ggmap(params$map) +
   ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group, fill = entity_id),
-                        data = tmp_units) +
+                        data = tmp_shown) +
+  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group),
+                        data = tmp_unassigned,
+                        fill = "black", alpha = 1/4) +
   ggplot2::geom_point(mapping = aes(x = long, y = lat),
-                      data = tmp_entities) +
+                      data = tmp_entities,
+                      size = 1) +
+  ggplot2::geom_text(mapping = aes(x = long, y = lat, label = entity_id),
+                     data = tmp_entities,
+                     size = 3,
+                     nudge_x = 0.002,
+                     hjust = 0) +
   ggplot2::coord_map(xlim = params$units@bbox["x",] + c(-0.01, 0.01),
-                          ylim = params$units@bbox["y",] + c(-0.01, 0.01),
-                          expand = FALSE) +
+                     ylim = params$units@bbox["y",] + c(-0.01, 0.01)) +
   ggplot2::scale_fill_discrete() +
-  ggplot2::guides(color = FALSE,
-                  fill = FALSE)
+  ggplot2::theme(
+    axis.line=element_blank(),
+    axis.text.x=element_blank(),
+    axis.text.y=element_blank(),
+    axis.ticks=element_blank(),
+    axis.title.x=element_blank(),
+    axis.title.y=element_blank(),
+    legend.position="none"
+  )
 ```
 
 ## Statistik zu den Einzugsbereichen

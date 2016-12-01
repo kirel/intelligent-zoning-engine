@@ -13,7 +13,7 @@ suppressPackageStartupMessages(library(rmarkdown))
 
 # Globals -----------------------------------------------------------------
 
-root <- "/home/moritz/Work/Idalab/intelligent-zoning-engine"
+root <- path.expand("~/Work/Idalab/intelligent-zoning-engine")
 data_path <- file.path(root, "app", "data")
 NONE_SELECTED = '__NONE_SELECTED__'
 NO_ASSIGNMENT = NONE_SELECTED
@@ -28,7 +28,7 @@ weights = readr::read_csv(file.path(data_path, 'weights.csv'))
 
 assignment = units@data %>%
   dplyr::select(unit_id) %>%
-  dplyr::left_join(read_csv(file.path(data_path, 'assignment.csv'))) %>%
+  dplyr::left_join(read_csv(file.path(data_path, 'assignment.csv')), by = "unit_id") %>%
   dplyr::mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id)) # FIXME necessary?
 
 units = units %>% sp::merge(assignment)
@@ -63,10 +63,13 @@ berlin <- ggmap::get_map("Berlin")
 
 # Render Report -----------------------------------------------------------
 
-rmarkdown::render(file.path(root, "report", "zuordnung.Rmd"), params = list(
-  map = berlin,
-  units = units,
-  entities = entities,
-  entity_stats = table_data,
-  assignment = assignment
-))
+rmarkdown::render(
+  file.path(root, "report", "zuordnung.Rmd"),
+  params = list(
+    map = berlin,
+    units = units,
+    entities = entities,
+    entity_stats = table_data,
+    assignment = assignment
+  )
+)
