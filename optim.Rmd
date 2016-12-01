@@ -150,12 +150,17 @@ TODO: Stattdessen mit https://github.com/berlinermorgenpost/cogran machen?
 
 ### Plot der 6-Jährigen nach `EWR201512E_Matrix.csv`
 
+Wir verwenden das mittel der 5- und 6-Jährigen.
+
 TODO neue Daten von Torres?
-TODO Mittel über mehrere Jahre verwenden? Prognose?
+TODO Prognose?
 
 ```{r}
-relevant_ewr = einwohner_lor %>% select(RAUMID, E_E06_07) %>% filter(RAUMID %in% relevant_lors$PLR) %>%
-  mutate(kids=as.numeric(gsub(',','.',E_E06_07))) %>% as.data.frame()
+relevant_ewr = einwohner_lor %>%
+  select(RAUMID, E_E05_06, E_E06_07) %>%
+  filter(RAUMID %in% relevant_lors$PLR) %>%
+  # Schnitt der 5 und 6-Jährigen
+  mutate(kids=(as.numeric(gsub(',','.',E_E06_07))+as.numeric(gsub(',','.',E_E05_06)))/2) %>% as.data.frame()
 
 data = tidy(lor[lor$BEZ == bez_id,], region='PLR') %>% inner_join(relevant_ewr, by=c('id'='RAUMID'))
 ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
@@ -172,10 +177,20 @@ ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=Einw), data=data)
 ```
 
 
-### Hochrrechnung auf Blöcke
+### Hochrrechnung auf Blöcke, Strukturquote
 
 ```{r}
-kids_in_blks = relevant_blks %>% group_by(PLR) %>% mutate(EinwRatio = Einw/sum(Einw)) %>% ungroup %>% left_join(relevant_ewr, by=c('PLR'='RAUMID')) %>% mutate(kids = EinwRatio*kids) %>% select(BEZ, PLR, BLK, Einw, kids) %>% as.data.frame()
+Strukturquote = 0.9
+
+kids_in_blks = relevant_blks %>%
+  group_by(PLR) %>%
+  mutate(EinwRatio = Einw/sum(Einw)) %>%
+  ungroup %>%
+  left_join(relevant_ewr, by=c('PLR'='RAUMID')) %>%
+  mutate(kids = EinwRatio*kids) %>%
+  mutate(kids = Strukturquote*kids) %>% # Strukturquote
+  select(BEZ, PLR, BLK, Einw, kids) %>%
+  as.data.frame()
 row.names(kids_in_blks) = kids_in_blks$BLK
 
 data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(kids_in_blks, by=c('id'='BLK')) %>% mutate(kids=ifelse(kids==0, NA, kids), Einw=ifelse(Einw==0, NA, Einw))
