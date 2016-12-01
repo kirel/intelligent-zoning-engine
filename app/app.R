@@ -492,14 +492,14 @@ server <- function(input, output, session) {
   reactive_table_data = reactive({
     r$assignment_rev # recalculate if assignment_rev is altered
     data = isolate(r$units) %>% as.data.frame() %>%
-      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id))
+      filter(entity_id != NO_ASSIGNMENT)
 
     # alternative data for hovered unit
     alternative = data
     if (r$selected_unit != NONE_SELECTED) {
       currently_assigned_entity = alternative[unit_index[r$selected_unit],]$entity_id
       alternative[unit_index[r$selected_unit], 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NO_ASSIGNMENT)
-      alternative = alternative %>% mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id))
+      alternative = alternative %>% filter(entity_id != NO_ASSIGNMENT)
     }
     
     table_data = data %>%
