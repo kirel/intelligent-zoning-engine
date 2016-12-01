@@ -461,21 +461,21 @@ server <- function(input, output, session) {
 
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
-    UNDER_CAPACITY_PENALTY = 0.1
-    DIST_WEIGHT = 1
-    OVER_CAPACITY_WEIGHT = 1
-    UNDER_CAPACITY_WEIGHT = 1
+    UNDER_CAPACITY_PENALTY = 1
+    DIST_WEIGHT = 1/2000^2 # 2000m means penalty of 1
+    OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
+    UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
-      summarise(population=sum(population), avg=sqrt(mean(avg^2))) %>%
+      summarise(avg=mean(avg^2), population=sum(population)) %>%
       inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
       rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(avg=mean(avg), over_capacity_penalty=mean(over_capacity_penalty), under_capacity_penalty=mean(under_capacity_penalty)) %>%
       (function(x) {
-        if (runif(1)<0) {
-        #if (runif(1)<0.1) {
+        #if (runif(1)<0) {
+        if (runif(1)<0.01) {
           cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=LOG)
           cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=LOG)
           cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=LOG)
