@@ -5,52 +5,34 @@ date: '`r format(Sys.time(), "%B %d, %Y")`'
 output: pdf_document
 params:
   map: ""
-  blocks: ""
-  schools: ""
-  school_stats: ""
-  school_blocks: "" 
+  units: ""
+  entities: ""
+  entity_stats: ""
+  assignment: "" 
 ---
 
 ```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-#' Export a Formattable as PNG, PDF, or JPEG
-#'
-#' @param f A formattable.
-#' @param file Export path with extension .png, .pdf, or .jpeg.
-#' @param width Width specification of the html widget being exported.
-#' @param height Height specification of the html widget being exported.
-#' @param background Background color specification.
-#' @param delay Time to wait before taking webshot, in seconds.
-#'
-#' @importFrom formattable as.htmlwidget
-#' @importFrom htmltools html_print
-#' @importFrom webshot webshot
-#'
-#' @export
-export_formattable <- function(f, file, width = "100%", height = NULL, 
-                               background = "white", delay = 0.2)
-{
-  w <- formattable::as.htmlwidget(f, width = width, height = height)
-  path <- htmltools::html_print(w, background = background, viewer = NULL)
-  url <- paste0("file:///", gsub("\\\\", "/", normalizePath(path)))
-  webshot::webshot(url,
-          file = file,
-          selector = ".formattable_widget",
-          delay = delay)
-}
 ```
 
 ## Kartendarstellung der Einzugsbereiche
 
 ```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
+  dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
+  dplyr::select(entity_id, group, long, lat)
+tmp_entities <- params$entities %>%
+  as.data.frame() %>%
+  dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
+
 ggmap::ggmap(params$map) +
-  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group, fill = 'school'),
-                        data = params$blocks) +
-  ggplot2::geom_point(mapping = aes(x = lon, y = lat),
-                      data = params$schools) +
-  ggplot2::coord_quickmap(xlim = params$blocks@bbox["x",] + c(-0.01, 0.01),
-                          ylim = params$blocks@bbox["y",] + c(-0.01, 0.01),
+  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group, fill = entity_id),
+                        data = tmp_units) +
+  ggplot2::geom_point(mapping = aes(x = long, y = lat),
+                      data = tmp_entities) +
+  ggplot2::coord_map(xlim = params$units@bbox["x",] + c(-0.01, 0.01),
+                          ylim = params$units@bbox["y",] + c(-0.01, 0.01),
                           expand = FALSE) +
-  ggplot2::scale_fill_brewer(palette = "Set1") +
+  ggplot2::scale_fill_discrete() +
   ggplot2::guides(color = FALSE,
                   fill = FALSE)
 ```
@@ -58,32 +40,22 @@ ggmap::ggmap(params$map) +
 ## Statistik zu den Einzugsbereichen
 
 ```{r stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-knitr::kable(params$school_stats)
+knitr::kable(params$entity_stats)
 ```
 
 ```{r pretty_table, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-pretty_table <- formattable::formattable(table_data,
-  list(
-    Kinder = formattable::formatter("span", x ~ formattable::digits(x, 2)),
-    Auslastung = formattable::formatter("span",
-      style = x ~ formattable::style(color = ifelse(x < 1, "green", "red")),
-      x ~ formattable::icontext(ifelse(x < 1, "ok", "remove"), formattable::percent(x))
-    ),
-    `Weg (Ø)` = formattable::proportion_bar("lightblue"),
-    `Weg (min)` = formattable::proportion_bar("lightblue"),
-    `Weg (max)` = formattable::proportion_bar("lightblue")
-  )
-)
-tmp_path <- tempfile(pattern = "table_", fileext = ".png")
-export_formattable(pretty_table, tmp_path)
-knitr::include_graphics(tmp_path)
 ```
 
 ## Schulen-Blöcke-Zuordnung
 
 ```{r solution, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-for (i in 1:nrow(params$school_blocks)) {
-  cat("**", params$school_blocks[[i, "school"]], ":**\n", sep = "")
-  cat(params$school_blocks[[i, "blocks"]], "\n\n", sep = "")
+entity_units <- params$assignment %>%
+  dplyr::select(entity_id, unit_id) %>%
+  dplyr::group_by(entity_id) %>%
+  dplyr::summarise(unit_ids = paste(unit_id, sep = "", collapse = ", "))
+
+for (i in 1:nrow(entity_units)) {
+  cat("**", entity_units[[i, "entity_id"]], ":**\n", sep = "")
+  cat(entity_units[[i, "unit_ids"]], "\n\n", sep = "")
 }
 ```
