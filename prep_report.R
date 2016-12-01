@@ -13,8 +13,7 @@ suppressPackageStartupMessages(library(rmarkdown))
 
 # Globals -----------------------------------------------------------------
 
-root <- path.expand("~/Work/Idalab/intelligent-zoning-engine")
-data_path <- file.path(root, "app", "data")
+data_path <- file.path("app", "data")
 NONE_SELECTED = '__NONE_SELECTED__'
 NO_ASSIGNMENT = NONE_SELECTED
 
@@ -64,7 +63,7 @@ berlin <- ggmap::get_map("Berlin")
 # Render Report -----------------------------------------------------------
 
 rmarkdown::render(
-  file.path(root, "report", "zuordnung.Rmd"),
+  file.path("app", "templates", "assignment_report_de.Rmd"),
   params = list(
     map = berlin,
     units = units,

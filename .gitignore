@@ -34,4 +34,4 @@ vignettes/*.pdf
 packrat/lib*/
 packrat/src/
 # Report
-report/zuordnung.pdf
+/app/templates/*.pdf
