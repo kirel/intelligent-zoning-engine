@@ -1,0 +1,103 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r libs, include=F, warning=F}
+library(readr)
+library(rgdal)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggmap)
+library(purrr)
+library(knitr)
+library(broom)
+library(maptools)
+```
+
+```{r}
+re_schulstand = readOGR('download/re_schulstand.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+re_schulstand_df = cbind(coordinates(re_schulstand), re_schulstand@data) %>%
+  select(school_id=spatial_name, s_long=coords.x1, s_lat=coords.x2, bezirk=BEZIRK) %>%
+  filter(grepl('G', school_id))
+sampled_buildings = read_rds('output/sampled_buildings.rds')
+route_matrix = read_rds('output/route_matrix.rds')
+blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+```
+
+```{r}
+fair_routes = route_matrix %>% filter(distance < 2000) %>% inner_join(sampled_buildings, by=c('src'='OI')) %>% inner_join(re_schulstand_df, by=c('dst'='school_id'))
+sp_fair_routes = fair_routes
+coordinates(sp_fair_routes) = ~ long + lat
+proj4string(sp_fair_routes) = proj4string(bez)
+fair_routes = cbind(fair_routes, over(sp_fair_routes, bez))
+```
+
+```{r}
+map = get_map('Berlin')
+```
+
+```{r}
+data = fair_routes %>%
+  group_by(dst) %>%
+  do(.[chull(.$long, .$lat),]) %>%
+  mutate(idx=row_number()) %>%
+  ungroup() %>%
+  arrange(dst, idx)
+
+colors = sample(rainbow(nrow(re_schulstand_df)))
+
+ggmap(map) +
+  geom_polygon(aes(long, lat, color=dst, fill=dst), alpha=0.1, data=data) +
+  geom_point(aes(s_long, s_lat, color=school_id), data=re_schulstand_df) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01)) +
+  scale_color_manual(values=colors) +
+  scale_fill_manual(values=colors) +
+  guides(color=F, fill=F)
+```
+
+```{r}
+ts = get_map('Berlin, Tempelhof-Schöneberg', zoom=11, scale=2)
+```
+
+
+```{r}
+data = fair_routes %>%
+  filter(
+    #BEZNAME=='Tempelhof-Schöneberg' & # Adresse in TS
+    bezirk=='Tempelhof-Schöneberg' # Schule in TS
+    ) %>%
+  group_by(dst) %>%
+  do(.[chull(.$long, .$lat),]) %>%
+  mutate(idx=row_number()) %>%
+  ungroup() %>%
+  arrange(dst, idx)
+
+colors = sample(rainbow(nrow(re_schulstand_df)))
+
+ggmap(ts) +
+  geom_path(aes(long, lat, group=group), subset(blk, BEZ == '07')) +
+  geom_polygon(aes(long, lat, color=dst, fill=dst), alpha=0.5, data=data) +
+  geom_point(aes(s_long, s_lat, color=school_id), data=re_schulstand_df %>% filter(bezirk=='Tempelhof-Schöneberg')) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01)) +
+  scale_color_manual(values=colors) +
+  scale_fill_manual(values=colors) +
+  guides(color=F, fill=F)
+```
+
+```{r}
+ggsave('figs/Umkreise.pdf', width=7, height = 10)
+```
+
+```{r}
+poly_df = data %>% group_by(dst) %>% do(poly=Polygons(list(Polygon(select(., long, lat))), first(.$dst))) %>% ungroup %>% as.data.frame
+row.names(poly_df) = poly_df$dst
+umkreise = SpatialPolygonsDataFrame(SpatialPolygons(poly_df$poly, proj4string=CRS(proj4string(bez))), select(poly_df, dst))
+plot(umkreise)
+
+unlink('output/umkreise', recursive = T)
+umkreise %>% writeOGR('output/umkreise', layer="Umkreise", driver="ESRI Shapefile", check_exists=F)
+```
+

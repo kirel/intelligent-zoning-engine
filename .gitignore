@@ -2,6 +2,7 @@ osrm/data/*
 /log/*
 /output/*
 /download/*
+/figs/*
 /app/data/*
 /app/*.log
 
