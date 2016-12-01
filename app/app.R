@@ -1,3 +1,4 @@
+library(rgdal)
 library(readr)
 library(dplyr)
 library(tidyr)
@@ -28,8 +29,8 @@ weights = read_csv('data/weights.csv')
 
 assignment = units@data %>%
   select(unit_id) %>%
-  left_join(read_csv('data/assignment.csv')) %>%
-  mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id)) # FIXME necessary?
+  left_join(read_csv('data/assignment.csv'), by='unit_id') %>%
+  mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id))
 
 units = units %>% sp::merge(assignment)
 
@@ -39,6 +40,7 @@ bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAs
 
 entity_ids = unique(entities$entity_id)
 unit_ids = unique(units$unit_id)
+optimizable_units = units %>% as.data.frame %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
 
 ### Helper functions
 
@@ -277,7 +279,7 @@ server <- function(input, output, session) {
   # Randomize (to test optimization)
   observeEvent(input$randomize, {
     random = units %>% as.data.frame() %>%
-      filter(unit_id %in% unit_ids) %>%
+      filter(unit_id %in% optimizable_units) %>%
       select(unit_id, entity_id) %>%
       mutate(entity_id=sample(entity_ids, nrow(.), replace = T))
 
@@ -295,7 +297,7 @@ server <- function(input, output, session) {
   add_current_to_ga_population = function() {
     # select only blocks with stats and assign random schools for unassigned blocks
     current = units %>% as.data.frame() %>%
-      filter(unit_id %in% unit_ids) %>%
+      filter(unit_id %in% optimizable_units) %>%
       select(unit_id) %>% left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id), by='unit_id') %>%
       mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
 
@@ -312,7 +314,6 @@ server <- function(input, output, session) {
 
   # main optimization loop
   observe({
-    return() # FIXME
     if (r$running_optimization) {
       isolate({
         # if there is no population to iterate on
@@ -331,10 +332,10 @@ server <- function(input, output, session) {
             r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
             
             # update relevant values for ui updates
-            prev_schools = r$blocks$school
-            new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
-            r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
-            r$blocks$updated = r$blocks$school != prev_schools
+            prev_entities = r$units$entity_id
+            new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(fittest, by="unit_id") %>% .$entity_id
+            r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
+            r$units$updated = r$units$entity_id != prev_entities
             
             r$assignment_rev = r$assignment_rev + 1
           }
@@ -379,15 +380,15 @@ server <- function(input, output, session) {
     num_mutations = ceiling(fraction*nrow(individual))
     # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
     # TODO divide exponent by optimization step
-    prob = individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
+    prob = individual %>% inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       transmute(avg=avg, cost=(avg/max(avg))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
     #cost = rep(1, nrow(individual))
     #cost = 1-cost
     mutation_idx = sample(1:nrow(individual), num_mutations, prob = prob)
-    mutation_blks = as.character(individual[mutation_idx, 'BLK'])
+    mutation_units = as.character(individual[mutation_idx, 'unit_id'])
     # preferrably select schools closer to the block
-    mutations = mutation_blks %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
-    individual[mutation_idx, 'school'] = unlist(mutations)
+    mutations = mutation_units %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
+    individual[mutation_idx, 'entity_id'] = unlist(mutations)
     individual
   }
 
@@ -395,15 +396,15 @@ server <- function(input, output, session) {
   # TODO only where they are different
   ga_crossover = function(a, b) {
     # only select from genes that are different
-    difference = a$school != b$school
+    difference = a$entity_id != b$entity_id
     if (sum(difference)==0) return(list(a, b))
     child_a = a[,]
     child_b = b[,]
     fraction = runif(1)
     num_genes = ceiling(fraction*sum(difference))
     swap_idx = sample((1:nrow(a))[difference], num_genes)
-    child_a[swap_idx, 'school'] = b[swap_idx, 'school']
-    child_b[swap_idx, 'school'] = a[swap_idx, 'school']
+    child_a[swap_idx, 'entity_id'] = b[swap_idx, 'entity_id']
+    child_b[swap_idx, 'entity_id'] = a[swap_idx, 'entity_id']
     list(child_a, child_b)
   }
 
@@ -464,11 +465,12 @@ server <- function(input, output, session) {
     DIST_WEIGHT = 1
     OVER_CAPACITY_WEIGHT = 1
     UNDER_CAPACITY_WEIGHT = 1
-    individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      group_by(school) %>%
-      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sqrt(mean(avg^2))) %>%
-      #summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2*kids)) %>%
-      rowwise() %>% mutate(over_capacity=max(1, kids-Kapa), under_capacity=max(1, Kapa-kids)) %>% ungroup %>%
+    individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
+      inner_join(weights, by=c('unit_id', 'entity_id')) %>%
+      group_by(entity_id) %>%
+      summarise(population=sum(population), avg=sqrt(mean(avg^2))) %>%
+      inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
+      rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(avg=mean(avg), over_capacity_penalty=mean(over_capacity_penalty), under_capacity_penalty=mean(under_capacity_penalty)) %>%
       (function(x) {
@@ -503,7 +505,7 @@ server <- function(input, output, session) {
     }
     
     table_data = data %>%
-      left_join(weights) %>%
+      left_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>% summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
@@ -511,13 +513,13 @@ server <- function(input, output, session) {
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T)
       ) %>%
-      left_join(entities@data %>% select(entity_id, capacity)) %>%
+      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
         utilization=pop/capacity
       )
 
     alternative_table_data = alternative %>%
-      left_join(weights) %>%
+      left_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>% summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
@@ -525,7 +527,7 @@ server <- function(input, output, session) {
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T)
       ) %>%
-      left_join(entities@data %>% select(entity_id, capacity)) %>%
+      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
         utilization=pop/capacity
       )
