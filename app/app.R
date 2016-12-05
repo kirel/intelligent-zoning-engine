@@ -392,6 +392,7 @@ server <- function(input, output, session) {
     #cost = 1-cost
     mutation_idx = sample(1:nrow(individual), num_mutations, prob = prob)
     mutation_units = as.character(individual[mutation_idx, 'unit_id'])
+    # TODO flip pairs instead of random assignment
     # preferrably select schools closer to the block
     mutations = mutation_units %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
     individual[mutation_idx, 'entity_id'] = unlist(mutations)
