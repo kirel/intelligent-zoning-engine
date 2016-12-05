@@ -13,12 +13,15 @@ library(memoise)
 library(future)
 library(futile.logger)
 
+source('ga.R')
+
 plan(multiprocess)
 
 options(shiny.autoreload=T)
 options(warn=-1)
 
-LOG='debug.log' # stderr()
+flog.threshold(DEBUG)
+flog.appender(appender.file('optimization.log'), name='optimization')
 
 NONE_SELECTED = '__NONE_SELECTED__'
 NO_ASSIGNMENT = NONE_SELECTED
@@ -306,7 +309,7 @@ server <- function(input, output, session) {
   }
   
   resetOptimization = function() {
-    cat('Resetting optimization before step', r$optimization_step, 'finished\n', file=stderr())
+    flog.info('Resetting optimization before step %s finished', r$optimization_step)
     r$optimization_step = 0
     # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
     forget(mem_fitness_f)
@@ -324,7 +327,7 @@ server <- function(input, output, session) {
         
         # if there is a resolved ga_population_future take the result and update all the things, then start a new one
         if (resolved(r$ga_population_future)) {
-          cat('Finished optimization step', r$optimization_step, '\n', file=stderr())
+          flog.info('Finished optimization step %s', r$optimization_step)
           future_population = value(r$ga_population_future)
           if (r$optimization_step > 0 && !is.null(future_population)) {
             r$ga_population = future_population
@@ -344,11 +347,13 @@ server <- function(input, output, session) {
           r$optimization_step = r$optimization_step + 1
           heuristic_exponent = 20/r$optimization_step^(1) # TODO = 1/2?
           mutation_fraction = max(0.001, 1-(r$optimization_step-1)/3)
-          cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
+          flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', r$optimization_step, mutation_fraction, heuristic_exponent)
           
           r$ga_population_future = future({
             ga_select(
               ga_breed(r$ga_population,
+                       ga_mutate=mutation_f,
+                       ga_crossover=crossover_f,
                        fitness_f=mem_fitness_f,
                        mutation_fraction=mutation_fraction,
                        num_pairs = 50,
@@ -376,7 +381,7 @@ server <- function(input, output, session) {
   ### genetic algorithm
   
   # randomly reassign a number of schools
-  ga_mutate = function(individual, fraction=0.05, heuristic_exponent=3) {
+  mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
     num_mutations = ceiling(fraction*nrow(individual))
     # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
@@ -395,7 +400,7 @@ server <- function(input, output, session) {
 
   # randomly mix assignments from two individuals into two new ones
   # TODO only where they are different
-  ga_crossover = function(a, b) {
+  crossover_f = function(a, b) {
     # only select from genes that are different
     difference = a$entity_id != b$entity_id
     if (sum(difference)==0) return(list(a, b))
@@ -407,55 +412,6 @@ server <- function(input, output, session) {
     child_a[swap_idx, 'entity_id'] = b[swap_idx, 'entity_id']
     child_b[swap_idx, 'entity_id'] = a[swap_idx, 'entity_id']
     list(child_a, child_b)
-  }
-
-  # takes a list of individuals and breeds new ones in addition
-  # returns the new population (that includes the old one)
-  ga_breed = function(population, fitness_f, num_pairs = 50, num_mutants = 100, mutation_fraction=0.001, heuristic_exponent=3) {
-    # precalculate sampling weights for sampling from the fittest
-    fitness = unlist(map(population, fitness_f))
-    cat('original population fitness', summary(fitness), '\n', file=LOG)
-    weights = -fitness+min(fitness)+max(fitness)
-    prob = weights/sum(weights)
-
-    cat('Mutating', num_mutants, 'individuals\n', file=stderr())
-    mutated = population %>%
-      sample(num_mutants, replace = T, prob = prob) %>% # sample based on fitness
-      map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
-    if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=LOG)
-    
-    mating_population = c(population, mutated)
-    if (length(mating_population) > 1) {
-      mating_fitness = unlist(map(mating_population, fitness_f))
-      mating_weights = -mating_fitness+min(mating_fitness)+max(mating_fitness)
-      mating_prob = mating_weights/sum(mating_weights)
-      
-      cat('Mating', num_pairs, 'pairs\n', file=LOG)
-      pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob)) # sample based on fitness
-      mated = do.call(c, map(pairs, ~ do.call(ga_crossover, .x)))
-      cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=LOG)
-    } else {
-      mated = list()
-    }
-    
-    # original population, mutated population and mated population
-    new_population = c(
-      population,
-      mutated,
-      mated
-    )
-  }
-
-  # selects the fittest individuals according to a fitness function
-  ga_select = function(population, fitness_f, survival_fraction=1, max_population=50) {
-    cat('Population size', length(population), '\n', file=LOG)
-    population = sort_by(unique(population), fitness_f)
-    cat(length(population), 'unique\n', file=LOG)
-    num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
-    cat('Keeping', num_survivors, 'survivors\n', file=LOG)
-    #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
-    survivors = population[1:num_survivors]
-    survivors
   }
 
   ### /genetic algorithm
@@ -477,9 +433,9 @@ server <- function(input, output, session) {
       (function(x) {
         #if (runif(1)<0) {
         if (runif(1)<0.01) {
-          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=LOG)
-          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=LOG)
-          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=LOG)
+          flog.debug('Distance error: %s', DIST_WEIGHT*x$avg, name='optimization')
+          flog.debug('Over capacity error: %s', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, name='optimization')
+          flog.debug('Under capacity error: %s', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, name='optimization')
         }
         x
       }) %>%
