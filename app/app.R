@@ -466,7 +466,7 @@ server <- function(input, output, session) {
       group_by(entity_id) %>% summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
-        avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
+        avg_dist=sum((population*avg)/sum(population, na.rm=T), na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T)
       ) %>%
@@ -480,7 +480,7 @@ server <- function(input, output, session) {
       group_by(entity_id) %>% summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
-        avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
+        avg_dist=sum((population*avg)/sum(population, na.rm=T), na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T)
       ) %>%
