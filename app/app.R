@@ -425,23 +425,38 @@ server <- function(input, output, session) {
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
-      summarise(avg=mean(avg^2), population=sum(population)) %>%
+      summarise(
+        avg=sum(avg*population)/sum(population), # population weighted mean
+        max=sum(max*population)/sum(population), # population weighted max # TODO remove?
+        population=sum(population)
+        ) %>%
       inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
       rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
-      summarise(avg=mean(avg), over_capacity_penalty=mean(over_capacity_penalty), under_capacity_penalty=mean(under_capacity_penalty)) %>%
+      summarise(
+        avg=mean(avg^2), # squared average distance
+        max=mean(max^2), # squared average distance
+        over_capacity_penalty=mean(over_capacity_penalty),
+        under_capacity_penalty=mean(under_capacity_penalty)
+        ) %>%
+      mutate(
+        avg = DIST_WEIGHT*avg,
+        max = DIST_WEIGHT*max,
+        over_capacity_penalty = OVER_CAPACITY_WEIGHT*over_capacity_penalty,
+        under_capacity_penalty = UNDER_CAPACITY_WEIGHT*under_capacity_penalty
+        ) %>%
       (function(x) {
         #if (runif(1)<0) {
         if (runif(1)<0.01) {
-          flog.debug('Distance error: %s', DIST_WEIGHT*x$avg, name='optimization')
-          flog.debug('Over capacity error: %s', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, name='optimization')
-          flog.debug('Under capacity error: %s', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, name='optimization')
+          flog.debug('Random sample error components', name='optimization')
+          flog.debug('Avg distance error: %s', x$avg, name='optimization')
+          flog.debug('Max distance error: %s', x$max, name='optimization')
+          flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
+          flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
         }
         x
       }) %>%
-      mutate(fitness = DIST_WEIGHT*avg +
-               OVER_CAPACITY_WEIGHT*over_capacity_penalty +
-               UNDER_CAPACITY_WEIGHT*under_capacity_penalty) %>% .$fitness
+      mutate(fitness = max + over_capacity_penalty + under_capacity_penalty) %>% .$fitness
   }
 
   mem_fitness_f = memoise(fitness_f)
