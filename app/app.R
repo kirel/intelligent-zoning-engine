@@ -11,6 +11,7 @@ library(shiny)
 library(DT)
 library(memoise)
 library(future)
+library(futile.logger)
 
 plan(multiprocess)
 
