@@ -103,10 +103,11 @@ ui <- fillPage(
       uiOutput('entity'),
       uiOutput('unit'),
       uiOutput('optimize', inline = TRUE),
+      actionButton('deselect', 'Ausw. aufh.'),
       actionButton('assign', 'Zuordnen'),
-      actionButton('deassign', 'Aufheben'),
+      actionButton('deassign', 'Löschen'),
       actionButton('lock', 'Verriegeln'),
-      actionButton('unlock', 'Entriegeln'),
+      actionButton('unlock', 'Entr.'),
       plotOutput('fitness', height = '150px')
     ),
     div(
@@ -156,6 +157,13 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(input$deselect, {
+    flog.debug('Deselect button pressed')
+    r$units[r$units$selected, 'updated'] = T
+    r$units$selected = F
     r$assignment_rev = r$assignment_rev + 1
   })
 
