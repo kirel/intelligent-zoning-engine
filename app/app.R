@@ -77,7 +77,7 @@ entities$hovered = F
 units$selected = F # selected units can be reassigned, locked, etc
 units$highlighted = T # highlight units when assigned entity is selected
 units$locked = F
-units$updated = F # only updated unites need to be redrawn
+units$updated = T # only updated unites need to be redrawn (true for initial render)
 units$hovered = F
 
 # Scales
@@ -289,15 +289,7 @@ server <- function(input, output, session) {
     isolate({
       m <- leaflet() %>%
         addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
-        addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
-        addPolygons(
-          data=r$units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted)
-        ) %>%
-        addCircleMarkers(
-          data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
-          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
-        )
+        addPolylines(color='black', weight=4, opacity=1, data=bez)
       flog.debug('Map initialized')
       m      
     })
