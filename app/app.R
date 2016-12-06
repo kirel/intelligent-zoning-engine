@@ -22,6 +22,7 @@ options(warn=-1)
 
 flog.threshold(DEBUG)
 flog.appender(appender.file('optimization.log'), name='optimization')
+flog.debug('Logging setup complete')
 
 NONE_SELECTED = '__NONE_SELECTED__'
 NO_ASSIGNMENT = NONE_SELECTED
@@ -46,6 +47,8 @@ entity_ids = unique(entities$entity_id)
 unit_ids = unique(units$unit_id)
 optimizable_units = units %>% as.data.frame %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
 
+flog.debug('Data loading complete')
+
 ### Helper functions
 
 # preferrably sample blocks closer to the school
@@ -67,11 +70,15 @@ distance_sample_probs = function(unit_id, heuristic_exponent=3) {
 
 unit_index = set_names(1:length(units$unit_id), units$unit_id)
 
-# when a unit/entity is selected it is not desaturated
-units$selected = T
-units$updated = F
-entities$selected = T
-entities$updated = F
+entities$selected = F
+# Remark: There is no entities$updated because they have to be redrawn anyway
+entities$highlighted = T # highlight when selected
+entities$hovered = F
+units$selected = F # selected units can be reassigned, locked, etc
+units$highlighted = T # highlight units when assigned entity is selected
+units$locked = F
+units$updated = F # only updated unites need to be redrawn
+units$hovered = F
 
 # Scales
 cfac = colorFactor(rainbow(length(entity_ids)), levels=sample(entity_ids))
@@ -107,9 +114,12 @@ ui <- fillPage(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
       uiOutput('entity'),
-      #uiOutput('unit'),
+      uiOutput('unit'),
       uiOutput('optimize', inline = TRUE),
-      actionButton('randomize', 'Randomisieren'),
+      actionButton('assign', 'Zuordnen'),
+      actionButton('deassign', 'Aufheben'),
+      actionButton('lock', 'Verriegeln'),
+      actionButton('lock', 'Entriegeln'),
       plotOutput('fitness', height = '150px')
     ),
     div(
@@ -127,7 +137,9 @@ server <- function(input, output, session) {
   r <- reactiveValues(
     units=units, entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
-    selected_unit=NONE_SELECTED, selected_entity=NONE_SELECTED, selected_entity_index=NULL,
+    selected_entity=NONE_SELECTED,
+    previous_selected_entity=NONE_SELECTED,
+    selected_entity_index=NULL, # only one can be selected
     running_optimization=FALSE,
     ga_population_future=future(NULL),
     optimization_step=0,
@@ -136,86 +148,137 @@ server <- function(input, output, session) {
   ### Interaction
 
   observeEvent(input$optimize, {
+    flog.debug('Optimize button pressed')
     if (r$running_optimization) {
       r$running_optimization = FALSE
     } else {
       r$running_optimization = TRUE
     }
   })
+  
+  observeEvent(input$assign, {
+    flog.debug('Assign button pressed')
+    r$units[r$units$selected, 'entity_id'] = r$selected_entity
+    r$units[r$units$selected, 'highlighted'] = T
+    r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(input$deassign, {
+    flog.debug('Deassign button pressed')
+    r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
+    r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
+    r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
+  })
 
-  # block mouseover -> highlight the shape
+  # unit mouseover -> highlight the shape
   observe({
+    return()
     req(input$map_shape_mouseover$id)
+    req(input$map_shape_mouseover$group)
+    flog.debug('mouseover event')
     if (input$map_shape_mouseover$id != isolate(r$previous_mouseover)) {
       # run this again and only set selected block if we're over the same shape after 100ms
       r$previous_mouseover = input$map_shape_mouseover$id
       invalidateLater(100, session)
-    } else if (grepl('unit_', input$map_shape_mouseover$id)) {
-      # select the respective block
-      r$selected_unit = substring(input$map_shape_mouseover$id, 6) # FIXME stattdessen sub('unit_', '', ...)?
+    } else if (input$map_shape_mouseover$group == 'units') {
+      # hover the respective block
+      hovered_unit = sub('unit_', '', input$map_shape_mouseover$id)
+      flog.debug('mouseover %s', hovered_unit)
+      isolate({
+        r$units[r$units$hovered, 'updated'] = T
+        r$units$hovered = F
+        r$units[unit_index[[hovered_unit]], 'hovered'] = T
+        r$units[unit_index[[hovered_unit]], 'updated'] = T
+      })
     }
   })
 
   observeEvent(input$map_shape_mouseout, {
+    return()
     req(input$map_shape_mouseout$id)
-    if (grepl('unit_', input$map_shape_mouseout$id)) {
-      # deselect the respective block
-      r$selected_block = NONE_SELECTED
+    req(input$map_shape_mouseout$group)
+    flog.debug('mouseout event')
+    if (input$map_shape_mouseout$group == 'units') {
+      # unhover the respective block
+      hovered_unit = sub('unit_', '', input$map_shape_mouseout$id)
+      flog.debug('mouseout %s', hovered_unit)
+      r$units[unit_index[[hovered_unit]], 'hovered'] = F
+      r$units[unit_index[[hovered_unit]], 'updated'] = T
     }
   })
 
-  # click on markers -> select school and blocks
+  # click on markers -> select entity and highlight units
+  # only changes r$selected_entity and r$selected_entity_index
   observeEvent(input$map_marker_click, {
     req(input$map_marker_click$id)
-    clicked_marker = input$map_marker_click$id
-    r$selected_entity = ifelse(clicked_marker == isolate(r$selected_entity), NONE_SELECTED, clicked_marker)
-    index = entities$entity_id %>% detect_index(~ .x == r$selected_entity)
-    if (is.null(index) | index == 0) r$selected_entity_index = NULL else r$selected_entity_index = index
-    r$selected_unit = NONE_SELECTED
+    req(input$map_marker_click$group)
+    flog.debug('marker %s clicked', input$map_marker_click$id)
+    isolate({
+      if (input$map_marker_click$group == "entities") {
+        clicked_marker = sub('entity_', '', input$map_marker_click$id)
+        r$previous_selected_entity = r$selected_entity
+        r$selected_entity = ifelse(clicked_marker == r$selected_entity, NONE_SELECTED, clicked_marker)
+        index = entities$entity_id %>% detect_index(~ .x == r$selected_entity)
+        if (is.null(index) | index == 0) r$selected_entity_index = NULL else r$selected_entity_index = index
+      }
+    })
+    # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
 
   # click on table row
+  # only changes r$selected_entity and r$selected_entity_index
   observe({
     row = input$table_rows_selected
+    flog.debug('row %s clicked', row)
     isolate({
       r$selected_entity_index = row
       r$selected_entity = ifelse(is.null(row), NONE_SELECTED, entities$entity_id[row])
-      r$selected_unit = NONE_SELECTED
     })
+    # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
 
-  # click on shapes -> update the solution
+  # click on shapes -> update the selected status
   observeEvent(input$map_shape_click, {
-    if (grepl('unit_', input$map_shape_click$id)) {
-      # a block was clicked
+    req(input$map_shape_click$id)
+    req(input$map_shape_click$group)
+    flog.debug('shape %s clicked', input$map_shape_click$id)
+    if (input$map_shape_click$group == 'units') {
+      # a unit was clicked
       clicked_unit = sub('unit_', '', input$map_shape_click$id)
-      r$selected_unit = clicked_unit
+      # flip clicked unit
+      r$units[r$units$unit_id == clicked_unit, 'selected'] = !r$units[r$units$unit_id == clicked_unit,]$selected
+      r$units[r$units$unit_id == clicked_unit, 'updated'] = T
+      
+      # FIXME don't
       # update the solution
-      currently_assigned_entity = r$units[r$units$unit_id == r$selected_unit,]$entity_id
+      # currently_assigned_entity = r$units[r$units$unit_id == r$selected_unit,]$entity_id
       # FIXME 3 times indexing the same thing - can this be faster?
-      r$units[r$units$unit_id == r$selected_unit, 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NONE_SELECTED)
-      r$units$updated = F
-      r$units[r$units$unit_id == r$selected_unit, 'updated'] = T
-      r$units[r$units$unit_id == r$selected_unit, 'selected'] = T
-      r$assignment_rev = r$assignment_rev + 1
+      # r$units[r$units$unit_id == r$selected_unit, 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NONE_SELECTED)
+      # r$units$updated = F
+      # r$units[r$units$unit_id == r$selected_unit, 'updated'] = T
+      # r$units[r$units$unit_id == r$selected_unit, 'selected'] = T
+      # r$assignment_rev = r$assignment_rev + 1
 
       # cancel optimization step (which is now invalid)
       resetOptimization()
     }
   })
 
-  # school selection changed - update blocks
+  # r$selected_entity watcher: entity selection changed - update blocks
   observe({
     selected_entity = r$selected_entity
+    
     isolate({
-      entities_selected_before = r$entities$selected
-      r$entities$selected = selected_entity == NONE_SELECTED # if nothing is selected all are selected
-      r$entities[r$entities$entity_id == selected_entity, 'selected'] = T
-      r$entities$updated = r$entities$updated | (r$entities$selected != entities_selected_before)
-      units_selected_before = r$units$selected
-      r$units$selected = selected_entity == NONE_SELECTED # if nothing is selected all are selected
-      r$units[r$units$entity_id == selected_entity, 'selected'] = T
-      r$units$updated = r$units$updated | (r$units$selected != units_selected_before)
+      flog.debug("selected entity changed to %s from %s", r$selected_entity, r$previous_selected_entity)
+
+      previously_highlighted = rep(r$entities$highlighted)
+      r$entities$highlighted = r$entities$entity_id == selected_entity | selected_entity == NONE_SELECTED
+
+      previously_highlighted = rep(r$units$highlighted)
+      r$units$highlighted = r$units$entity_id == selected_entity | selected_entity == NONE_SELECTED
+      r$units$updated = r$units$updated | (r$units$highlighted != previously_highlighted)
     })
   })
 
@@ -223,78 +286,53 @@ server <- function(input, output, session) {
 
   # Initial map render
   output$map <- renderLeaflet({
-
-    m <- leaflet() %>%
-      addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
-      addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
-      addPolygons(
-        data=isolate(r$units), group='units', layerId=~paste0('unit_', unit_id),
-        stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, !selected)
+    isolate({
+      m <- leaflet() %>%
+        addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
+        addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
+        addPolygons(
+          data=r$units, group='units', layerId=~paste0('unit_', unit_id),
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted)
         ) %>%
-      addCircleMarkers(
-        data=isolate(r$entities), group='entities', layerId=~entity_id,
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, !selected)
+        addCircleMarkers(
+          data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
         )
-    m
-
+      flog.debug('Map initialized')
+      m      
+    })
   })
 
   # incremental map update
   observe({
     updated_units = r$units[r$units$updated,]
-    if (nrow(updated_units) > 0) {
+    isolate({
+      if (nrow(updated_units) > 0) {
+        leafletProxy("map") %>%
+          # redraw updated selected units
+          addPolygons(
+            data=updated_units, group='units', layerId=~paste0('unit_', unit_id),
+            stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted)
+          ) %>%
+          # draw boundaries of selected units
+          addPolylines(
+            data=updated_units, color=~ifelse(selected, 'red', 'transparent'), weight=4,
+            group='selected_units', layerId=~paste0('selected_unit_', unit_id),
+            options=pathOptions(pointerEvents='none')
+          )
+      }
+      r$units$updated = F
+      # always draw entities on top
       leafletProxy("map") %>%
-        addPolygons(
-          data=updated_units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, !selected)
-        )
-    }
-    leafletProxy("map") %>%
-      addCircleMarkers(
-        data=r$entities, group='entities', layerId=~entity_id,
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, !selected)
-      )
-    r$units$updated = F
-    r$entities$updated = F
-  })
-
-  # block highlight marker
-  observe({
-    if (r$selected_unit != NONE_SELECTED) {
-      highlighted_unit = r$units[unit_index[r$selected_unit],]
-      leafletProxy("map") %>%
-        addPolylines(data=highlighted_unit, color='red', weight=4, layerId='highlighted_unit') %>%
-        addPolygons(
-          data=highlighted_unit, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, !selected)
-        ) %>%
         addCircleMarkers(
-          data=r$entities, group='entities', layerId=~entity_id,
-          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, !selected)
+          data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
         )
-    } else {
-      leafletProxy("map") %>%
-        removeShape('highlighted_unit')
-    }
+    })
+    flog.debug('Map updated')
   })
 
   ### optimization
-
-  # Randomize (to test optimization)
-  observeEvent(input$randomize, {
-    random = units %>% as.data.frame() %>%
-      filter(unit_id %in% optimizable_units) %>%
-      select(unit_id, entity_id) %>%
-      mutate(entity_id=sample(entity_ids, nrow(.), replace = T))
-
-    new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(random, by="unit_id") %>% .$entity_id
-    r$units$entity_id = ifelse(is.na(new_entities), NO_ASSIGNMENT, new_entities)
-    r$units$updated = T
-
-    r$ga_population = list(random)
-
-    r$assignment_rev = r$assignment_rev + 1
-  })
 
   # make sure there is at least one individual in the population
   # see main optimization loop
@@ -339,7 +377,7 @@ server <- function(input, output, session) {
             prev_entities = r$units$entity_id
             new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(fittest, by="unit_id") %>% .$entity_id
             r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
-            r$units$updated = r$units$entity_id != prev_entities
+            r$units$updated = r$units$updated | r$units$entity_id != prev_entities
             
             r$assignment_rev = r$assignment_rev + 1
           }
@@ -469,13 +507,9 @@ server <- function(input, output, session) {
     data = isolate(r$units) %>% as.data.frame() %>%
       filter(entity_id != NO_ASSIGNMENT)
 
-    # alternative data for hovered unit
+    # alternative data for staged assignment
+    # FIXME add actual data
     alternative = data
-    if (r$selected_unit != NONE_SELECTED) {
-      currently_assigned_entity = alternative[unit_index[r$selected_unit],]$entity_id
-      alternative[unit_index[r$selected_unit], 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NO_ASSIGNMENT)
-      alternative = alternative %>% filter(entity_id != NO_ASSIGNMENT)
-    }
     
     table_data = data %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
@@ -600,7 +634,7 @@ server <- function(input, output, session) {
   })
 
   output$unit = renderUI({
-    div(h4(r$selected_unit))
+    div(h4(do.call(paste, as.list(r$units$unit_id[r$units$selected]))))
   })
 
   output$optimize = renderUI({
