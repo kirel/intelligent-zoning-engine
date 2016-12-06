@@ -634,7 +634,7 @@ server <- function(input, output, session) {
   })
 
   output$unit = renderUI({
-    div(h4(do.call(paste, as.list(r$units$unit_id[r$units$selected]))))
+    div(p(do.call(paste, c(sep=', ', as.list(r$units$unit_id[r$units$selected])))))
   })
 
   output$optimize = renderUI({
