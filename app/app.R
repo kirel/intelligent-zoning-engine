@@ -166,6 +166,18 @@ server <- function(input, output, session) {
     r$units$selected = F
     r$assignment_rev = r$assignment_rev + 1
   })
+  
+  observeEvent(input$lock, {
+    flog.debug('Lock button pressed')
+    r$units[r$units$selected, 'locked'] = T
+    r$units[r$units$selected, 'updated'] = T
+  })
+  
+  observeEvent(input$unlock, {
+    flog.debug('Unlock button pressed')
+    r$units[r$units$selected, 'locked'] = F
+    r$units[r$units$selected, 'updated'] = T
+  })
 
   # unit mouseover -> highlight the shape
   observe({
