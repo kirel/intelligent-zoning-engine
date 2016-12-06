@@ -119,7 +119,7 @@ ui <- fillPage(
       actionButton('assign', 'Zuordnen'),
       actionButton('deassign', 'Aufheben'),
       actionButton('lock', 'Verriegeln'),
-      actionButton('lock', 'Entriegeln'),
+      actionButton('unlock', 'Entriegeln'),
       plotOutput('fitness', height = '150px')
     ),
     div(
