@@ -1,23 +1,10 @@
-library(rgdal)
-library(readr)
-library(dplyr)
-library(tidyr)
-library(leaflet)
-library(htmltools)
-library(purrr)
-library(colorspace)
-library(ggplot2)
-library(shiny)
-library(DT)
-library(memoise)
-library(future)
-library(futile.logger)
-
+source('deps.R')
 source('ga.R')
 
 plan(multiprocess)
 
 options(shiny.autoreload=T)
+options(shiny.host="0.0.0.0")
 options(warn=-1)
 
 flog.threshold(DEBUG)
