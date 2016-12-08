@@ -291,12 +291,42 @@ server <- function(input, output, session) {
 
   ### Update the UI
 
+  updateMap = function(map, units) {
+    flog.debug('updateMap')
+    flog.debug('nrow(units) %s', nrow(units))
+    if (nrow(units) > 0) {
+      flog.debug('redrawing units')
+      map = map %>%
+        # redraw updated selected units
+        addPolygons(
+          data=units, group='units', layerId=~paste0('unit_', unit_id),
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted),
+          options=NULL #pathOptions(className=~ifelse(locked, 'locked', 'unlocked'))
+        ) %>%
+        # draw boundaries of selected units
+        addPolylines(
+          data=units, color=~ifelse(selected, 'red', 'transparent'), weight=4,
+          group='selected_units', layerId=~paste0('selected_unit_', unit_id),
+          options=pathOptions(pointerEvents='none', className='selected_units')
+        )
+    }
+    # always draw entities on top
+    map = map %>%
+      addCircleMarkers(
+        data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
+      )
+    return(map)
+  }
+  
   # Initial map render
   output$map <- renderLeaflet({
     isolate({
       m <- leaflet() %>%
         addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
-        addPolylines(color='black', weight=4, opacity=1, data=bez)
+        addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
+        updateMap(r$units)
+      r$units$updated = F
       flog.debug('Map initialized')
       m      
     })
@@ -306,28 +336,9 @@ server <- function(input, output, session) {
   observe({
     updated_units = r$units[r$units$updated,]
     isolate({
-      if (nrow(updated_units) > 0) {
-        leafletProxy("map") %>%
-          # redraw updated selected units
-          addPolygons(
-            data=updated_units, group='units', layerId=~paste0('unit_', unit_id),
-            stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted)
-          ) %>%
-          # draw boundaries of selected units
-          addPolylines(
-            data=updated_units, color=~ifelse(selected, 'red', 'transparent'), weight=4,
-            group='selected_units', layerId=~paste0('selected_unit_', unit_id),
-            options=pathOptions(pointerEvents='none')
-          )
-      }
-      r$units$updated = F
-      # always draw entities on top
-      leafletProxy("map") %>%
-        addCircleMarkers(
-          data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
-          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
-        )
+      leafletProxy("map") %>% updateMap(updated_units)
     })
+    r$units$updated = F
     flog.debug('Map updated')
   })
 
