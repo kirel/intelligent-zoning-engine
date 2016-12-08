@@ -84,8 +84,7 @@ ui <- fillPage(
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
-    tags$style(HTML(
-    "
+    tags$style(type="text/css", HTML("
     #map-panel { height: calc(100% - 240px); }
     #table-panel { height: 100%; overflow: scroll; }
     .capacity-ok { color: green; }
@@ -95,7 +94,19 @@ ui <- fillPage(
     .change-up .glyphicon-arrow-down { display: none; }
     .change-down .glyphicon-arrow-up { display: none; }
     .no-change { color: transparent; }
+    /* see http://iros.github.io/patternfills/sample_css.html */
+    #svg-patterns { position: absolute; }
+    .unlocked { fill: transparent; }
+    .locked { fill: url(#locked-pattern); }
     "))),
+  # stripes pattern
+  div(
+    id='svg-patterns',
+    HTML('<svg height="5" width="5" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="locked-pattern" patternUnits="userSpaceOnUse" width="5" height="5"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cGF0aCBkPSJNMCA1TDUgMFpNNiA0TDQgNlpNLTEgMUwxIC0xWiIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+" x="0" y="0" width="5" height="5"> </image> </pattern> </defs> </svg>'),
+    HTML('<svg height="10" width="10" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="diagonal-stripe-1" patternUnits="userSpaceOnUse" width="10" height="10"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+CiAgPHJlY3Qgd2lkdGg9JzEwJyBoZWlnaHQ9JzEwJyBmaWxsPSd3aGl0ZScvPgogIDxwYXRoIGQ9J00tMSwxIGwyLC0yCiAgICAgICAgICAgTTAsMTAgbDEwLC0xMAogICAgICAgICAgIE05LDExIGwyLC0yJyBzdHJva2U9J2JsYWNrJyBzdHJva2Utd2lkdGg9JzEnLz4KPC9zdmc+Cg==" x="0" y="0" width="10" height="10"> </image> </pattern> </defs> </svg>'),
+    HTML('<svg height="8" width="8" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="crosshatch" patternUnits="userSpaceOnUse" width="8" height="8"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4JyBoZWlnaHQ9JzgnPgogIDxyZWN0IHdpZHRoPSc4JyBoZWlnaHQ9JzgnIGZpbGw9JyNmZmYnLz4KICA8cGF0aCBkPSdNMCAwTDggOFpNOCAwTDAgOFonIHN0cm9rZS13aWR0aD0nMC41JyBzdHJva2U9JyNhYWEnLz4KPC9zdmc+Cg==" x="0" y="0" width="8" height="8"> </image> </pattern> </defs> </svg>
+')
+  ),
   fillRow(
     div(
       id='map-panel',
@@ -300,8 +311,13 @@ server <- function(input, output, session) {
         # redraw updated selected units
         addPolygons(
           data=units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted),
-          options=NULL #pathOptions(className=~ifelse(locked, 'locked', 'unlocked'))
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted)
+        ) %>%
+        # locked
+        addPolygons(
+          data=units, color=NULL, fillOpacity=NULL,
+          group='locked_units', layerId=~paste0('locked_unit_', unit_id),
+          options=pathOptions(pointerEvents='none', className=~ifelse(locked, 'locked', 'unlocked'))
         ) %>%
         # draw boundaries of selected units
         addPolylines(
