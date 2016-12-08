@@ -392,6 +392,7 @@ server <- function(input, output, session) {
             r$assignment_rev = r$assignment_rev + 1
           }
           
+          # Start new optimization step
           r$optimization_step = r$optimization_step + 1
           heuristic_exponent = 20/r$optimization_step^(1) # TODO = 1/2?
           mutation_fraction = max(0.001, 1-(r$optimization_step-1)/3)
@@ -463,8 +464,6 @@ server <- function(input, output, session) {
     list(child_a, child_b)
   }
 
-  ### /genetic algorithm
-
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 1
@@ -509,6 +508,8 @@ server <- function(input, output, session) {
   }
 
   mem_fitness_f = memoise(fitness_f)
+  
+  ### /genetic algorithm
 
   ### table
 
