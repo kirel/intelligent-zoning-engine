@@ -559,7 +559,7 @@ server <- function(input, output, session) {
         Kinder=pop,
         Auslastung=utilization,
         `ΔAusl.`=delta_utilization,
-        `Weg (min)`=min_dist,
+        #`Weg (min)`=min_dist,
         `Weg (Ø)`=avg_dist,
         `Weg (max)`=max_dist
       )
@@ -597,7 +597,11 @@ server <- function(input, output, session) {
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
       formatPercentage(c('Auslastung', 'ΔAusl.'), digits = 2) %>%
-      formatRound(c('Kinder', 'Weg (min)', 'Weg (max)', 'Weg (Ø)')) %>%
+      formatRound(c(
+        'Kinder',
+        #'Weg (min)',
+        'Weg (max)',
+        'Weg (Ø)')) %>%
       formatStyle(
         'Weg (Ø)',
         background = styleColorBar(data$`Weg (Ø)`, 'lightskyblue'),
@@ -605,13 +609,13 @@ server <- function(input, output, session) {
         backgroundRepeat = 'no-repeat',
         backgroundPosition = 'center'
       ) %>%
-      formatStyle(
-        'Weg (min)',
-        background = styleColorBar(data$`Weg (min)`, 'wheat'),
-        backgroundSize = '92% 80%',
-        backgroundRepeat = 'no-repeat',
-        backgroundPosition = 'center'
-      ) %>%
+      # formatStyle(
+      #   'Weg (min)',
+      #   background = styleColorBar(data$`Weg (min)`, 'wheat'),
+      #   backgroundSize = '92% 80%',
+      #   backgroundRepeat = 'no-repeat',
+      #   backgroundPosition = 'center'
+      # ) %>%
       formatStyle(
         'Weg (max)',
         background = styleColorBar(data$`Weg (max)`, 'coral'),
