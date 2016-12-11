@@ -553,9 +553,10 @@ server <- function(input, output, session) {
       group_by(entity_id) %>% summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
-        avg_dist=sum((population*avg)/sum(population, na.rm=T), na.rm=T), # population weighted mean
+        avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
-        pop=sum(population, na.rm=T)
+        pop=sum(population, na.rm=T),
+        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T)
       ) %>%
       left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
@@ -567,9 +568,10 @@ server <- function(input, output, session) {
       group_by(entity_id) %>% summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
-        avg_dist=sum((population*avg)/sum(population, na.rm=T), na.rm=T), # population weighted mean
+        avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
-        pop=sum(population, na.rm=T)
+        pop=sum(population, na.rm=T),
+        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T)
       ) %>%
       left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
@@ -586,6 +588,7 @@ server <- function(input, output, session) {
         Kinder=pop,
         Auslastung=utilization,
         `ΔAusl.`=delta_utilization,
+        `SGBII(u.65)`=sgbIIu65,
         #`Weg (min)`=min_dist,
         `Weg (Ø)`=avg_dist,
         `Weg (max)`=max_dist
@@ -623,7 +626,7 @@ server <- function(input, output, session) {
         options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
-      formatPercentage(c('Auslastung', 'ΔAusl.'), digits = 2) %>%
+      formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
       formatRound(c(
         'Kinder',
         #'Weg (min)',
