@@ -81,7 +81,7 @@ anmeldezahlen: download/anmeldezahlen.csv
 
 # https://www.wahlen-berlin.de/Wahlen/Be2016/DL_BE_AH2016_Strukturdaten.xlsx
 download/DL_BE_AH2016_Strukturdaten.xlsx:
-	wget --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36" https://www.wahlen-berlin.de/Wahlen/Be2016/SB_B07-02-01_2016j05_BE.xlsx -O $@
+	wget --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36" https://www.wahlen-berlin.de/Wahlen/Be2016/DL_BE_AH2016_Strukturdaten.xlsx -O $@
 
 # https://www.wahlen-berlin.de/wahlen/BE2016/Wahlkreiseinteil/wahlkreiseinteil.asp?sel1=1253&sel2=1045
 download/RBS_OD_UWB_AGH2016.geojson:
