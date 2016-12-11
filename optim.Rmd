@@ -5,6 +5,7 @@ output: html_notebook
 
 ```{r libs, include=F, warning=F}
 library(readr)
+library(readxl)
 library(rgdal)
 library(dplyr)
 library(tidyr)
@@ -14,6 +15,7 @@ library(purrr)
 library(knitr)
 library(broom)
 library(maptools)
+library(rgeos)
 ```
 
 Dieses Notebook bereitet die Daten für die Intelligent Zoning Engine vor. Es speichert
@@ -264,7 +266,81 @@ dim(travel_matrix)
 travel_matrix
 ```
 
-# Select relevant data
+## Sozioökonomische Daten
+
+Wir haben Sozioökonomische Daten in den Wahlbezirken. Strategie:
+- Schneiden der Wahlbezirke mit den Blöcken
+- Übernahme des Prozentwertes vom Wahlbezirk für jeden (Unter-)block
+- Zuordnung zu jedem Block und Vereinigung durch Flächen/Wohnhaus-gewichtetes Mittel des Prozentwertes 
+
+```{r}
+UWB = readOGR('download/RBS_OD_UWB_AGH2016.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+UWB$ID = paste0(UWB$BEZ, UWB$UWB)
+sozio_UWB = read_excel('download/DL_BE_AH2016_Strukturdaten.xlsx', sheet = 3) %>% select(ID, sgbIIu65=`Einwohner unter 65 in SGB II 2014 Prozent`)
+UWB = UWB %>% sp::merge(sozio_UWB, by='ID')
+
+ggplot(broom::tidy(UWB, region='ID') %>% inner_join(UWB %>% as.data.frame, by=c('id'='ID'))) + geom_polygon(aes(x=long, y=lat, group=group, fill=sgbIIu65)) + coord_map()
+```
+
+Check for self intersections
+```{r}
+wgs84 = CRS(proj4string(blk))
+ea_projection = CRS("+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
+blk_in_bez = blk[blk$BEZ == '07',]
+gIsValid(blk_in_bez)
+blk_in_bez = gBuffer(spTransform(blk_in_bez, ea_projection), byid=T, width = -0.1)
+any(xor(gIntersects(buffered_blk_in_bez, byid=T, returnDense = T), diag(1, length(blk_in_bez)) == 1))
+plot(blk_in_bez)
+#gIntersects(UWB[UWB$BEZ == '07',], byid=TRUE)
+```
+
+```{r}
+uwb_in_bez = gBuffer(spTransform(UWB[UWB$BEZ == '07',], ea_projection), byid=T, width=-0.1)
+gIsValid(uwb_in_bez)
+any(xor(gIntersects(uwb_in_bez, byid=T, returnDense = T), diag(1, length(uwb_in_bez)) == 1))
+plot(uwb_in_bez)
+```
+
+```{r}
+intersection = gIntersection(uwb_in_bez, blk_in_bez, byid = T, drop_lower_td = T)
+
+gIsValid(intersection)
+plot(intersection)
+```
+
+```{r}
+intersection_uwb_data = intersection %>% over(uwb_in_bez)
+intersection_blk_data = intersection %>% over(blk_in_bez)
+intersection_area = gArea(intersection, byid=T)
+intersection_data = cbind(
+    intersection_uwb_data %>% select(UWB_ID=ID, sgbIIu65),
+    intersection_blk_data %>% select(BLK, BLK_Einw=Einw),
+    data.frame(area=intersection_area) # FIXME how else to normalize?
+    )
+```
+
+```{r}
+length(intersection)
+nrow(blk_in_bez)
+# did we miss any blocks?
+setdiff(blk_in_bez$BLK, intersection_data$BLK)
+```
+
+Pro Block mische die SGB-Werte der Unterblöcke gewichtet nach Fläche.
+FIXME - besser nach Anzahl der Wohnhäuser?
+```{r}
+sgbII_blk = intersection_data %>%
+  group_by(BLK) %>%
+  summarise(sgbIIu65=sum(sgbIIu65*area)/sum(area))
+```
+
+
+```{r}
+ggplot(broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK') %>% left_join(sgbII_blk, by=c('id'='BLK'))) + geom_polygon(aes(x=long, y=lat, group=group, fill=sgbIIu65)) + coord_map()
+```
+
+
+## Select relevant data
 
 ```{r}
 optim_kapas = relevant_kapas
@@ -381,7 +457,11 @@ units@data$BEZ = NULL
 units@data$unit_id = units@data$BLK
 units@data$BLK = NULL
 
-units = units %>% sp::merge(optim_kids_in_blks %>% select(unit_id=BLK, population=kids))
+units = units %>% sp::merge(
+  optim_kids_in_blks %>%
+    left_join(sgbII_blk) %>%
+    select(unit_id=BLK, population=kids, sgbIIu65) %>%
+  )
 
 file.remove('app/data/units.geojson')
 units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
