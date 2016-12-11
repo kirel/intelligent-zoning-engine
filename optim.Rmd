@@ -331,7 +331,7 @@ FIXME - besser nach Anzahl der Wohnhäuser?
 ```{r}
 sgbII_blk = intersection_data %>%
   group_by(BLK) %>%
-  summarise(sgbIIu65=sum(sgbIIu65*area)/sum(area))
+  summarise(sgbIIu65=sum(sgbIIu65*area)/sum(area)/100)
 ```
 
 
@@ -460,7 +460,7 @@ units@data$BLK = NULL
 units = units %>% sp::merge(
   optim_kids_in_blks %>%
     left_join(sgbII_blk) %>%
-    select(unit_id=BLK, population=kids, sgbIIu65) %>%
+    select(unit_id=BLK, population=kids, sgbIIu65)
   )
 
 file.remove('app/data/units.geojson')
