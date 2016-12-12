@@ -94,21 +94,8 @@ ui <- fillPage(
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
-    tags$style(type="text/css", HTML("
-    #map-panel { height: calc(100% - 240px); }
-    #table-panel { height: 100%; overflow: scroll; }
-    .capacity-ok { color: green; }
-    .capacity-ok .glyphicon-remove { display: none; }
-    .capacity-panic { color: red; }
-    .capacity-panic .glyphicon-ok { display: none; }
-    .change-up .glyphicon-arrow-down { display: none; }
-    .change-down .glyphicon-arrow-up { display: none; }
-    .no-change { color: transparent; }
-    /* see http://iros.github.io/patternfills/sample_css.html */
-    #svg-patterns { position: absolute; }
-    .unlocked { fill: transparent; }
-    .locked { fill: url(#locked-pattern); }
-    "))),
+    tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")
+  ),
   # stripes pattern
   div(
     id='svg-patterns',
