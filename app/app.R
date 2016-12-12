@@ -308,7 +308,12 @@ server <- function(input, output, session) {
         # redraw updated selected units
         addPolygons(
           data=units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~entity_colors(entity_id, desaturate = !highlighted)
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2,
+          color = ~ ifelse( # TODO factor into function
+              entity_id == NONE_SELECTED & unit_id %in% optimizable_units,
+              ifelse(!highlighted, desat(warning_color, 0.3), warning_color),
+              entity_colors(entity_id, desaturate = !highlighted)
+              )
         ) %>%
         # locked
         addPolygons(
