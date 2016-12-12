@@ -108,15 +108,25 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
-      uiOutput('entity'),
-      uiOutput('unit'),
-      uiOutput('optimize', inline = TRUE),
-      actionButton('deselect', 'Ausw. aufh.'),
-      actionButton('assign', 'Zuordnen'),
-      actionButton('deassign', 'Löschen'),
-      actionButton('lock', 'Verriegeln'),
-      actionButton('unlock', 'Entr.'),
-      plotOutput('fitness', height = '120px')
+      tabsetPanel(type="tabs",
+                  tabPanel("Details", div(id='detail',
+                      uiOutput('entity'),
+                      uiOutput('unit'),
+                      # TODO move buttons into UI outputs
+                      actionButton('deselect', 'Ausw. aufh.'),
+                      actionButton('assign', 'Zuordnen'),
+                      actionButton('deassign', 'Löschen'),
+                      actionButton('lock', 'Verriegeln'),
+                      actionButton('unlock', 'Entr.')
+                  )),
+                  tabPanel("Import/Export", div(id='io',
+                      actionButton('report', 'Report')
+                  )),
+                  tabPanel("Optimierung", div(id='optimize',
+                      uiOutput('optimize', inline = TRUE),
+                      plotOutput('fitness', height = '120px')
+                  ))
+      )
     ),
     div(
       id='table-panel',
