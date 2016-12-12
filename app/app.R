@@ -787,15 +787,22 @@ server <- function(input, output, session) {
       # ensure write permissions, cf. http://shiny.rstudio.com/gallery/generating-reports.html
       temp_file = file.path(tempdir(), 'assignment_report_de.Rmd')
       file.copy('templates/assignment_report_de.Rmd', temp_file, overwrite = TRUE)
+      # load map
+      map_path = 'data/berlin.rds'
+      if (file.exists(map_path)) {
+        berlin = read_rds(map_path)
+      } else {
+        berlin = ggmap::get_map('Berlin')
+        write_rds(berlin, map_path, compress = 'gz')
+      }
       rmarkdown::render(
         temp_file,
         output_file = con,
         envir = new.env(parent = globalenv()),  # isolate rendering
         params = list(
           map = berlin,
-          units = units,
-          entities = entities,
-          assignment = assignment,
+          units = r$units,
+          entities = r$entities,
           NO_ASSIGNMENT = NO_ASSIGNMENT
         )
       )

@@ -8,7 +8,6 @@ params:
   map: ""
   units: ""
   entities: ""
-  assignment: "" 
   NO_ASSIGNMENT: ""
 ---
 
@@ -22,9 +21,9 @@ tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
   dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
   dplyr::select(entity_id, group, long, lat)
 tmp_shown = tmp_units %>%
-  dplyr::filter(entity_id != NO_ASSIGNMENT)
+  dplyr::filter(entity_id != params$NO_ASSIGNMENT)
 tmp_unassigned = tmp_units %>%
-  dplyr::filter(entity_id == NO_ASSIGNMENT)
+  dplyr::filter(entity_id == params$NO_ASSIGNMENT)
 tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
@@ -61,7 +60,7 @@ ggmap::ggmap(params$map) +
 ```{r entity_stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 data = params$units %>%
   as.data.frame() %>%
-  mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT, 'Keine', entity_id))
+  dplyr::mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT, 'Keine', entity_id))
 
 table_data = data %>%
   dplyr::left_join(weights) %>%
@@ -87,10 +86,13 @@ knitr::kable(table_data)
 ## Schulen-Blöcke-Zuordnung
 
 ```{r solution, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-entity_units <- params$assignment %>%
+entity_units <- params$units %>%
+  as.data.frame() %>%
   dplyr::select(entity_id, unit_id) %>%
   dplyr::group_by(entity_id) %>%
-  dplyr::summarise(unit_ids = paste(unit_id, sep = "", collapse = ", "))
+  dplyr::summarise(unit_ids = paste(unit_id, sep = "", collapse = ", ")) %>%
+  dplyr::mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT,
+                                   'Nicht Zugeordnet', entity_id))
 
 for (i in 1:nrow(entity_units)) {
   cat("**", entity_units[[i, "entity_id"]], ":**\n", sep = "")
