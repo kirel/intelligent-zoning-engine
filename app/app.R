@@ -117,11 +117,13 @@ ui <- fillPage(
                             actionButton('assign_units', 'Zuordnen'),
                             actionButton('deassign_units', 'Löschen'),
                             actionButton('lock_units', 'Verriegeln'),
-                            actionButton('unlock_units', 'Entriegeln')
+                            actionButton('unlock_units', 'Entriegeln'),
+                            tableOutput('selected_units_table')
                         ),
                         div(id='detail--entity',
                             h4(textOutput('selected_entity')),
-                            actionButton('deselect_entity', 'Auswahl aufheben')
+                            actionButton('deselect_entity', 'Auswahl aufheben'),
+                            tableOutput('selected_entity_table')
                         )
                       )
                       # TODO move buttons into UI outputs
@@ -598,7 +600,7 @@ server <- function(input, output, session) {
         avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T),
-        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T)
+        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
       left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
@@ -613,7 +615,7 @@ server <- function(input, output, session) {
         avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T),
-        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T)
+        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
       left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
@@ -709,28 +711,55 @@ server <- function(input, output, session) {
   })
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
+  
+  ### Variables for detail views
 
   output$selected_entity = renderText({
-    if (r$selected_entity == NONE_SELECTED) {
-      'Keine Schule ausgewählt'
-    } else {
+    if (r$selected_entity != NONE_SELECTED) {
       entity = entities@data %>% filter(entity_id == r$selected_entity)
       paste(r$selected_entity, entity$SCHULNAME)
+    } else {
+      'Keine Schule ausgewählt'
     }
   })
+  
+  output$selected_entity_table = renderTable({
+    if (r$selected_entity != NONE_SELECTED) {
+      d = reactive_table_data()[reactive_table_data()$Schule == r$selected_entity,] %>%
+        select(`Kapazität`, Kinder, Auslastung, `SGBII(u.65)`)
+      row.names(d) = 'values'
+      t(d)
+    }
+  }, colnames=F, rownames=T, spacing='xs', width='100%')
 
   output$selected_units = renderText({
-    selected_unit_ids = r$units$unit_id[r$units$selected]
-    if (length(selected_unit_ids) < 1) {
-      'Keine Blöcke ausgewählt'
-    } else {
+    if (sum(r$units$selected) > 0) {
+      selected_unit_ids = r$units$unit_id[r$units$selected]
       do.call(paste, c(sep=', ', as.list(selected_unit_ids)))
+    } else {
+      'Keine Blöcke ausgewählt'
     }
   })
+  
+  output$selected_units_table = renderTable({
+    if (sum(r$units$selected) > 0) {
+      selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
+        summarise(
+          Kinder=sum(population, na.rm=T),
+          `SGBII(u.65)`=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T)
+        )
+      row.names(selected_units_data) = 'values'
+      t(selected_units_data)
+    }
+  }, colnames=F, rownames=T, spacing='xs', width='100%')
+  
+  ### optimization
 
   output$optimize_button = renderUI({
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
+  
+  ### Export
   
   output$serveAssignment = downloadHandler(
     filename = function() {
