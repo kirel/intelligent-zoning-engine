@@ -339,6 +339,24 @@ sgbII_blk = intersection_data %>%
 ggplot(broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK') %>% left_join(sgbII_blk, by=c('id'='BLK'))) + geom_polygon(aes(x=long, y=lat, group=group, fill=sgbIIu65)) + coord_map()
 ```
 
+## Adjazenz von Blöcken
+
+```{r}
+adjacency = gIntersects(gBuffer(blk_in_bez, byid=T, width=40), byid = T)
+
+adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=row.names(.)) %>%
+  gather(to, connected, -from) %>% filter(connected) %>%
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=row.names(.))) %>%
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=row.names(.)))
+
+ggplot() +
+  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK')) + 
+  geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=adjacency_df) +
+  theme_nothing() + coord_map()
+
+ggsave('figs/adjacency.pdf')
+```
+
 
 ## Select relevant data
 
