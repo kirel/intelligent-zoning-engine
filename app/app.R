@@ -120,14 +120,14 @@ ui <- fillPage(
                       actionButton('unlock', 'Entr.')
                   )),
                   tabPanel("Import/Export", div(id='io',
-                      actionButton('report', 'Report')
+                      actionButton('report', 'Report'),
                       downloadButton('serveAssignment', 'Herunterladen'),
                       fileInput('readAssignment', 'Hochladen',
                                 accept = c('text/csv',
                                            'text/comma-separated-values',
                                            'text/plain',
                                            '.csv')
-                                ),
+                                )
                   )),
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize', inline = TRUE),
