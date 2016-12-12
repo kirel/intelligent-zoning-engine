@@ -1,4 +1,4 @@
-#map-panel { height: calc(100% - 240px); }
+#map-panel { height: calc(100% - 260px); }
 #table-panel { height: 100%; overflow: scroll; }
 .capacity-ok { color: green; }
 .capacity-ok .glyphicon-remove { display: none; }
