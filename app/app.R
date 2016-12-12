@@ -121,6 +121,13 @@ ui <- fillPage(
                   )),
                   tabPanel("Import/Export", div(id='io',
                       actionButton('report', 'Report')
+                      downloadButton('serveAssignment', 'Herunterladen'),
+                      fileInput('readAssignment', 'Hochladen',
+                                accept = c('text/csv',
+                                           'text/comma-separated-values',
+                                           'text/plain',
+                                           '.csv')
+                                ),
                   )),
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize', inline = TRUE),
@@ -195,6 +202,22 @@ server <- function(input, output, session) {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
+  })
+  
+  observeEvent(input$readAssignment, {
+    flog.debug('upload button pressed')
+    num_warn = length(warnings())
+    upload = read_csv(input$readAssignment$datapath)
+    num_warn = length(warnings()) - num_warn
+    validate(
+      need(num_warn == 0,
+           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+      # need(),  # all unit_ids must be valid
+      # need()  # all entity_ids must be valid
+    )
+    r$units$unit_id = upload[, 1]
+    r$units$entity_id = upload[, 2]
+    r$units$updated = TRUE
   })
 
   # unit mouseover -> highlight the shape
@@ -686,6 +709,19 @@ server <- function(input, output, session) {
   output$optimize = renderUI({
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
+  
+  output$serveAssignment = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.csv')
+    },
+    content = function(con) {
+      data = isolate(r$units) %>%
+        as.data.frame() %>%
+        select(unit_id, entity_id) %>%
+        filter(entity_id != NO_ASSIGNMENT)
+      write_csv(data, con)
+    }
+  )
 
 }
 
