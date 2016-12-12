@@ -127,7 +127,14 @@ ui <- fillPage(
                       # TODO move buttons into UI outputs
                   )),
                   tabPanel("Import/Export", div(id='io',
-                      actionButton('report', 'Report')
+                      actionButton('report', 'Report'),
+                      downloadButton('serveAssignment', 'Herunterladen'),
+                      fileInput('readAssignment', 'Hochladen',
+                                accept = c('text/csv',
+                                           'text/comma-separated-values',
+                                           'text/plain',
+                                           '.csv')
+                                )
                   )),
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize_button', inline = TRUE),
@@ -207,6 +214,27 @@ server <- function(input, output, session) {
   observeEvent(input$deselect_entity, {
     flog.debug('Deselect button pressed')
     r$selected_entity = NONE_SELECTED
+  }) 
+
+  observeEvent(input$readAssignment, {
+    flog.debug('upload button pressed')
+    num_warn = length(warnings())
+    upload = read_csv(input$readAssignment$datapath)
+    num_warn = length(warnings()) - num_warn
+    validate(
+      need(num_warn == 0,
+           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+      # need(),  # all unit_ids must be valid
+      # need()  # all entity_ids must be valid
+    )
+    prev_entities = r$units$entity_id
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(upload, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
+    r$units$updated = TRUE
+    r$assignment_rev = r$assignment_rev + 1
   })
 
   # unit mouseover -> highlight the shape
@@ -703,6 +731,19 @@ server <- function(input, output, session) {
   output$optimize_button = renderUI({
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
+  
+  output$serveAssignment = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.csv')
+    },
+    content = function(con) {
+      data = isolate(r$units) %>%
+        as.data.frame() %>%
+        select(unit_id, entity_id) %>%
+        filter(entity_id != NO_ASSIGNMENT)
+      write_csv(data, con)
+    }
+  )
 
 }
 
