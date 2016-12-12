@@ -110,20 +110,27 @@ ui <- fillPage(
       leafletOutput("map", width="100%", height='100%'),
       tabsetPanel(type="tabs",
                   tabPanel("Details", div(id='detail',
-                      uiOutput('entity'),
-                      uiOutput('unit'),
+                      fillRow(
+                        div(id='detail--units',
+                            p(uiOutput('selected_units')),
+                            actionButton('deselect_units', 'Auswahl aufheben'),
+                            actionButton('assign_units', 'Zuordnen'),
+                            actionButton('deassign_units', 'Löschen'),
+                            actionButton('lock_units', 'Verriegeln'),
+                            actionButton('unlock_units', 'Entriegeln')
+                        ),
+                        div(id='detail--entity',
+                            h4(textOutput('selected_entity')),
+                            actionButton('deselect_entity', 'Auswahl aufheben')
+                        )
+                      )
                       # TODO move buttons into UI outputs
-                      actionButton('deselect', 'Ausw. aufh.'),
-                      actionButton('assign', 'Zuordnen'),
-                      actionButton('deassign', 'Löschen'),
-                      actionButton('lock', 'Verriegeln'),
-                      actionButton('unlock', 'Entr.')
                   )),
                   tabPanel("Import/Export", div(id='io',
                       actionButton('report', 'Report')
                   )),
                   tabPanel("Optimierung", div(id='optimize',
-                      uiOutput('optimize', inline = TRUE),
+                      uiOutput('optimize_button', inline = TRUE),
                       plotOutput('fitness', height = '120px')
                   ))
       )
@@ -162,7 +169,7 @@ server <- function(input, output, session) {
     }
   })
   
-  observeEvent(input$assign, {
+  observeEvent(input$assign_units, {
     flog.debug('Assign button pressed')
     r$units[r$units$selected, 'entity_id'] = r$selected_entity
     r$units[r$units$selected, 'highlighted'] = T
@@ -170,7 +177,7 @@ server <- function(input, output, session) {
     r$assignment_rev = r$assignment_rev + 1
   })
   
-  observeEvent(input$deassign, {
+  observeEvent(input$deassign_units, {
     flog.debug('Deassign button pressed')
     r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
@@ -178,23 +185,28 @@ server <- function(input, output, session) {
     r$assignment_rev = r$assignment_rev + 1
   })
   
-  observeEvent(input$deselect, {
+  observeEvent(input$deselect_units, {
     flog.debug('Deselect button pressed')
     r$units[r$units$selected, 'updated'] = T
     r$units$selected = F
     r$assignment_rev = r$assignment_rev + 1
   })
   
-  observeEvent(input$lock, {
+  observeEvent(input$lock_units, {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
   })
   
-  observeEvent(input$unlock, {
+  observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
+  })
+  
+  observeEvent(input$deselect_entity, {
+    flog.debug('Deselect button pressed')
+    r$selected_entity = NONE_SELECTED
   })
 
   # unit mouseover -> highlight the shape
@@ -670,20 +682,25 @@ server <- function(input, output, session) {
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
 
-  output$entity = renderUI({
+  output$selected_entity = renderText({
     if (r$selected_entity == NONE_SELECTED) {
-      div(h4('Keine Schule ausgewählt'))
+      'Keine Schule ausgewählt'
     } else {
       entity = entities@data %>% filter(entity_id == r$selected_entity)
-      div(h4(paste(r$selected_entity, entity$SCHULNAME)))
+      paste(r$selected_entity, entity$SCHULNAME)
     }
   })
 
-  output$unit = renderUI({
-    div(p(do.call(paste, c(sep=', ', as.list(r$units$unit_id[r$units$selected])))))
+  output$selected_units = renderText({
+    selected_unit_ids = r$units$unit_id[r$units$selected]
+    if (length(selected_unit_ids) < 1) {
+      'Keine Blöcke ausgewählt'
+    } else {
+      do.call(paste, c(sep=', ', as.list(selected_unit_ids)))
+    }
   })
 
-  output$optimize = renderUI({
+  output$optimize_button = renderUI({
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
 
