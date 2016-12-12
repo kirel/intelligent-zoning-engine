@@ -215,9 +215,14 @@ server <- function(input, output, session) {
       # need(),  # all unit_ids must be valid
       # need()  # all entity_ids must be valid
     )
-    r$units$unit_id = upload[, 1]
-    r$units$entity_id = upload[, 2]
+    prev_entities = r$units$entity_id
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(upload, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
     r$units$updated = TRUE
+    r$assignment_rev = r$assignment_rev + 1
   })
 
   # unit mouseover -> highlight the shape
