@@ -289,7 +289,7 @@ ea_projection = CRS("+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +e
 blk_in_bez = blk[blk$BEZ == '07',]
 gIsValid(blk_in_bez)
 blk_in_bez = gBuffer(spTransform(blk_in_bez, ea_projection), byid=T, width = -0.1)
-any(xor(gIntersects(buffered_blk_in_bez, byid=T, returnDense = T), diag(1, length(blk_in_bez)) == 1))
+any(xor(gIntersects(blk_in_bez, byid=T, returnDense = T), diag(1, length(blk_in_bez)) == 1))
 plot(blk_in_bez)
 #gIntersects(UWB[UWB$BEZ == '07',], byid=TRUE)
 ```
