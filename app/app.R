@@ -133,7 +133,7 @@ ui <- fillPage(
                       # TODO move buttons into UI outputs
                   )),
                   tabPanel("Import/Export", div(id='io',
-                      actionButton('report', 'Report'),
+                      downloadButton('report', 'Report'),
                       downloadButton('serveAssignment', 'Herunterladen'),
                       fileInput('readAssignment', 'Hochladen',
                                 accept = c('text/csv',
@@ -767,6 +767,7 @@ server <- function(input, output, session) {
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
   
+<<<<<<< 2e64fd086754b62a6d69df7370af9b77f39ea77c
   ### Export
   
   output$serveAssignment = downloadHandler(
@@ -779,6 +780,26 @@ server <- function(input, output, session) {
         select(unit_id, entity_id) %>%
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
+=======
+  output$report = downloadHandler(
+    filename = paste0('report_', Sys.Date(), '.pdf'),
+    content = function(con) {
+      # ensure write permissions, cf. http://shiny.rstudio.com/gallery/generating-reports.html
+      temp_file = file.path(tempdir(), 'assignment_report_de.Rmd')
+      file.copy('templates/assignment_report_de.Rmd', temp_file, overwrite = TRUE)
+      rmarkdown::render(
+        temp_file,
+        output_file = con,
+        envir = new.env(parent = globalenv()),  # isolate rendering
+        params = list(
+          map = berlin,
+          units = units,
+          entities = entities,
+          assignment = assignment,
+          NO_ASSIGNMENT = NO_ASSIGNMENT
+        )
+      )
+>>>>>>> add button and render call
     }
   )
 
