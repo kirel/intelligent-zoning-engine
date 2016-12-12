@@ -38,6 +38,10 @@ flog.debug('Data loading complete')
 
 ### Helper functions
 
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
+
 # preferrably sample blocks closer to the school
 # should be higher for smaller numbers
 distance_sample_weights = unit_ids %>% map(function(unit_id) {
@@ -726,7 +730,11 @@ server <- function(input, output, session) {
   output$selected_entity_table = renderTable({
     if (r$selected_entity != NONE_SELECTED) {
       d = reactive_table_data()[reactive_table_data()$Schule == r$selected_entity,] %>%
-        select(`Kapazität`, Kinder, Auslastung, `SGBII(u.65)`)
+        transmute(
+          `Kapazität`=`Kapazität`,
+          Kinder=formatC(Kinder, digits=2, format='f'),
+          Auslastung=percent(Auslastung),
+          `SGBII(u.65)`=percent(`SGBII(u.65)`))
       row.names(d) = 'values'
       t(d)
     }
@@ -745,8 +753,8 @@ server <- function(input, output, session) {
     if (sum(r$units$selected) > 0) {
       selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
         summarise(
-          Kinder=sum(population, na.rm=T),
-          `SGBII(u.65)`=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T)
+          Kinder=formatC(sum(population, na.rm=T), digits=2, format='f'),
+          `SGBII(u.65)`=percent(sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T))
         )
       row.names(selected_units_data) = 'values'
       t(selected_units_data)
