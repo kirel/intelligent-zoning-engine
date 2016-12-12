@@ -116,7 +116,7 @@ ui <- fillPage(
       actionButton('deassign', 'Löschen'),
       actionButton('lock', 'Verriegeln'),
       actionButton('unlock', 'Entr.'),
-      plotOutput('fitness', height = '150px')
+      plotOutput('fitness', height = '120px')
     ),
     div(
       id='table-panel',
