@@ -810,7 +810,9 @@ server <- function(input, output, session) {
           units = r$units,
           entities = r$entities,
           NO_ASSIGNMENT = NO_ASSIGNMENT,
-          colors = color_vec
+          colors = color_vec,
+          optimizable_units = optimizable_units,
+          weights = weights
         )
       ))
     }

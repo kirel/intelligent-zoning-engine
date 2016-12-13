@@ -27,7 +27,8 @@ entities = rgdal::readOGR(file.path(data_path, 'entities.geojson'),
                           layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 weights = readr::read_csv(file.path(data_path, 'weights.csv'))
 
-assign_path = file.path(data_path, 'assignment.csv')
+# assign_path = file.path(data_path, 'assignment.csv')
+assign_path = '/home/moritz/Downloads/assignment_2016-12-13.csv'
 
 assignment = units@data %>%
   dplyr::select(unit_id) %>%
@@ -35,6 +36,11 @@ assignment = units@data %>%
   dplyr::mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id)) # FIXME necessary?
 
 units = units %>% sp::merge(assignment)
+optimizable_units = units %>%
+  as.data.frame() %>%
+  inner_join(weights, by='unit_id') %>%
+  .$unit_id %>%
+  unique()
 
 # Map ---------------------------------------------------------------------
 
@@ -69,6 +75,8 @@ rmarkdown::render(
     units = units,
     entities = entities,
     NO_ASSIGNMENT = NO_ASSIGNMENT,
-    colors = color_vec
+    colors = color_vec,
+    optimizable_units = optimizable_units,
+    weights = weights
   )
 )

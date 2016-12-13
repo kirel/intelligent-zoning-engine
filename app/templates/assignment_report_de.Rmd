@@ -8,8 +8,10 @@ params:
   map: ""
   units: ""
   entities: ""
+  weights: ""
   colors: ""
   NO_ASSIGNMENT: ""
+  optimizable_units: ""
 ---
 
 ```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -17,14 +19,15 @@ params:
 
 ## Kartendarstellung der Einzugsbereiche
 
-```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.align='center', out.extra='keepaspectratio', fig.height=8.5}
+```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.align='center', out.extra='keepaspectratio', fig.height=8}
 tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
   dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
-  dplyr::select(entity_id, group, long, lat)
+  dplyr::select(id, entity_id, group, long, lat) %>%
+  dplyr::mutate(optim = id %in% params$optimizable_units)
 tmp_shown = tmp_units %>%
-  dplyr::filter(entity_id %in% names(color_vec))
+  dplyr::filter(optim)
 tmp_unassigned = tmp_units %>%
-  dplyr::filter(!(entity_id %in% names(color_vec)))
+  dplyr::filter(!optim)
 tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
@@ -62,17 +65,20 @@ data = params$units %>%
   dplyr::filter(entity_id != params$NO_ASSIGNMENT)
 
 table_data = data %>%
-  dplyr::left_join(weights) %>%
+  dplyr::left_join(params$weights, by=c('unit_id', 'entity_id')) %>%
   dplyr::group_by(entity_id) %>%
   dplyr::summarise(
-    num_units=n(),
-    sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T),
-    avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
-    max_dist=max(max, na.rm=T),
-    pop=sum(population, na.rm=T)
+    num_units = n(),
+    pop = sum(population, na.rm = TRUE),
+    sgbIIu65 = sum(population * sgbIIu65, na.rm = TRUE) / pop,
+    avg_dist = mean((population * avg) / pop, na.rm = TRUE),
+    max_dist = max(max, na.rm = TRUE)
   ) %>%
-  dplyr::left_join(params$entities@data %>% dplyr::select(entity_id, capacity)) %>%
-  dplyr::mutate(utilization = scales::percent(pop / capacity))
+  dplyr::left_join(params$entities %>%
+                     as.data.frame() %>%
+                     dplyr::select(entity_id, capacity),
+                   by = 'entity_id') %>%
+  dplyr::mutate(utilization = pop / capacity)
 ```
 
 ```{r stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -84,15 +90,10 @@ header <- c("Schule",
             "Weg (Ø)",
             "Weg (max)")
 table_data %>%
-  dplyr::select(
-    entity_id,
-    capacity,
-    pop,
-    utilization,
-    sgbIIu65,
-    avg_dist,
-    max_dist
-  ) %>%
+  dplyr::select(entity_id, capacity, pop, utilization,
+                sgbIIu65, avg_dist, max_dist) %>%
+  dplyr::mutate(sgbIIu65 = scales::percent(sgbIIu65),
+                utilization = scales::percent(utilization)) %>%
   knitr::kable(digits = 2, col.names = header)
 ```
 
