@@ -8,6 +8,7 @@ params:
   map: ""
   units: ""
   entities: ""
+  colors: ""
   NO_ASSIGNMENT: ""
 ---
 
@@ -21,9 +22,9 @@ tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
   dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
   dplyr::select(entity_id, group, long, lat)
 tmp_shown = tmp_units %>%
-  dplyr::filter(entity_id != params$NO_ASSIGNMENT)
+  dplyr::filter(entity_id %in% names(color_vec))
 tmp_unassigned = tmp_units %>%
-  dplyr::filter(entity_id == params$NO_ASSIGNMENT)
+  dplyr::filter(!(entity_id %in% names(color_vec)))
 tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
@@ -38,11 +39,10 @@ ggmap::ggmap(params$map) +
                       size = 1) +
   ggrepel::geom_text_repel(mapping = aes(x = long, y = lat, label = entity_id),
                      data = tmp_entities,
-                     size = 3,
-                     nudge_x = 0.002) +
+                     size = 3) +
   ggplot2::coord_map(xlim = params$units@bbox["x",] + c(-0.01, 0.01),
                      ylim = params$units@bbox["y",] + c(-0.01, 0.01)) +
-  ggplot2::scale_fill_discrete() +
+  ggplot2::scale_fill_manual(values = params$colors) +
   ggplot2::theme(
     axis.line=element_blank(),
     axis.text.x=element_blank(),
@@ -59,24 +59,41 @@ ggmap::ggmap(params$map) +
 ```{r entity_stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 data = params$units %>%
   as.data.frame() %>%
-  dplyr::mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT, 'Keine', entity_id))
+  dplyr::filter(entity_id != params$NO_ASSIGNMENT)
 
 table_data = data %>%
   dplyr::left_join(weights) %>%
   dplyr::group_by(entity_id) %>%
   dplyr::summarise(
     num_units=n(),
-    min_dist=min(min, na.rm=T),
+    sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T),
     avg_dist=mean((population*avg)/sum(population, na.rm=T), na.rm=T),
     max_dist=max(max, na.rm=T),
     pop=sum(population, na.rm=T)
   ) %>%
   dplyr::left_join(params$entities@data %>% dplyr::select(entity_id, capacity)) %>%
-  dplyr::mutate(utilization = pop / capacity)
+  dplyr::mutate(utilization = scales::percent(pop / capacity))
 ```
 
 ```{r stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-knitr::kable(table_data)
+header <- c("Schule",
+            "Kapazität",
+            "Kinder",
+            "Auslastung",
+            "SGBII(u.65)",
+            "Weg (Ø)",
+            "Weg (max)")
+table_data %>%
+  dplyr::select(
+    entity_id,
+    capacity,
+    pop,
+    utilization,
+    sgbIIu65,
+    avg_dist,
+    max_dist
+  ) %>%
+  knitr::kable(digits = 2, col.names = header)
 ```
 
 ```{r pretty_table, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}

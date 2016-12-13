@@ -93,6 +93,11 @@ desat <- function(cols, sat=0.5) {
   hsv(X[1,], X[2,], X[3,])
 }
 
+# Colors for Report
+
+color_vec = c(palette, warning_color)
+names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
+
 ### UI
 ui <- fillPage(
   tags$head(
@@ -598,7 +603,8 @@ server <- function(input, output, session) {
     
     table_data = data %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
-      group_by(entity_id) %>% summarise(
+      group_by(entity_id) %>%
+      summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
         avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
@@ -803,7 +809,8 @@ server <- function(input, output, session) {
           map = berlin,
           units = r$units,
           entities = r$entities,
-          NO_ASSIGNMENT = NO_ASSIGNMENT
+          NO_ASSIGNMENT = NO_ASSIGNMENT,
+          colors = color_vec
         )
       ))
     }
