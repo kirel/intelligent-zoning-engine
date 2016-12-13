@@ -1,6 +1,6 @@
 PackratFormat: 1.4
 PackratVersion: 0.4.8.1
-RVersion: 3.3.1
+RVersion: 3.3.2
 Repos: CRAN=https://cran.rstudio.com/
 
 Package: BH
@@ -278,21 +278,21 @@ Package: ggmap
 Source: CRAN
 Version: 2.6.1
 Hash: 3e5545418aab1ad8e47c218236dd4f0b
-Requires: RgoogleMaps, digest, geosphere, ggplot2, jpeg, mapproj, plyr,
-    png, proto, reshape2, rjson, scales
+Requires: digest, jpeg, png, proto, rjson, plyr, mapproj, RgoogleMaps,
+    scales, geosphere, reshape2, ggplot2
 
 Package: ggplot2
 Source: CRAN
 Version: 2.2.0
 Hash: 78c14285e0c114542d051a09bd552472
-Requires: MASS, digest, gtable, lazyeval, plyr, reshape2, scales,
-    tibble
+Requires: MASS, digest, gtable, lazyeval, plyr, tibble, scales,
+    reshape2
 
 Package: ggrepel
 Source: CRAN
 Version: 0.6.5
 Hash: 47ab5960c50bda9a2500e5d523a5dfca
-Requires: Rcpp, ggplot2, scales
+Requires: Rcpp, scales, ggplot2
 
 Package: git2r
 Source: CRAN
@@ -589,6 +589,12 @@ Version: 1.0.0
 Hash: 039717eb9efc0f60bbbaaa211f485a26
 Requires: BH, R6, Rcpp, curl, hms, tibble
 
+Package: readxl
+Source: CRAN
+Version: 0.1.1
+Hash: a80e2ef94a7228ec43d840fcb2792bc6
+Requires: Rcpp
+
 Package: registry
 Source: CRAN
 Version: 0.3
@@ -651,7 +657,7 @@ Package: scales
 Source: CRAN
 Version: 0.4.1
 Hash: cf658953d600d4736b058df1558df481
-Requires: RColorBrewer, Rcpp, dichromat, labeling, munsell, plyr
+Requires: RColorBrewer, Rcpp, dichromat, labeling, plyr, munsell
 
 Package: shiny
 Source: CRAN
