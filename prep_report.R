@@ -7,6 +7,7 @@ suppressPackageStartupMessages(library(formattable))
 suppressPackageStartupMessages(library(htmltools))
 suppressPackageStartupMessages(library(ggmap))
 suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(ggrepel))
 suppressPackageStartupMessages(library(knitr))
 suppressPackageStartupMessages(library(rmarkdown))
 
@@ -33,7 +34,13 @@ units = units %>% sp::merge(assignment)
 
 # Map ---------------------------------------------------------------------
 
-berlin <- ggmap::get_map("Berlin")
+map_path = file.path(data_path, 'berlin.rds')
+if (file.exists(map_path)) {
+  berlin = read_rds(map_path)
+} else {
+  berlin = ggmap::get_map('Berlin')
+  write_rds(berlin, map_path, compress = 'gz')
+}
 
 # Render Report -----------------------------------------------------------
 
@@ -43,7 +50,6 @@ rmarkdown::render(
     map = berlin,
     units = units,
     entities = entities,
-    assignment = assignment,
     NO_ASSIGNMENT = NO_ASSIGNMENT
   )
 )

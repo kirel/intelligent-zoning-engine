@@ -767,7 +767,6 @@ server <- function(input, output, session) {
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
   
-<<<<<<< 2e64fd086754b62a6d69df7370af9b77f39ea77c
   ### Export
   
   output$serveAssignment = downloadHandler(
@@ -780,7 +779,8 @@ server <- function(input, output, session) {
         select(unit_id, entity_id) %>%
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
-=======
+    })
+
   output$report = downloadHandler(
     filename = paste0('report_', Sys.Date(), '.pdf'),
     content = function(con) {
@@ -795,7 +795,7 @@ server <- function(input, output, session) {
         berlin = ggmap::get_map('Berlin')
         write_rds(berlin, map_path, compress = 'gz')
       }
-      rmarkdown::render(
+      isolate(rmarkdown::render(
         temp_file,
         output_file = con,
         envir = new.env(parent = globalenv()),  # isolate rendering
@@ -805,11 +805,9 @@ server <- function(input, output, session) {
           entities = r$entities,
           NO_ASSIGNMENT = NO_ASSIGNMENT
         )
-      )
->>>>>>> add button and render call
+      ))
     }
   )
-
 }
 
 shinyApp(ui, server)
