@@ -93,6 +93,11 @@ desat <- function(cols, sat=0.5) {
   hsv(X[1,], X[2,], X[3,])
 }
 
+# Colors for Report
+
+color_vec = c(palette, warning_color)
+names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
+
 ### UI
 ui <- fillPage(
   tags$head(
@@ -133,9 +138,9 @@ ui <- fillPage(
                       # TODO move buttons into UI outputs
                   )),
                   tabPanel("Import/Export", div(id='io',
-                      actionButton('report', 'Report'),
-                      downloadButton('serveAssignment', 'Herunterladen'),
-                      fileInput('readAssignment', 'Hochladen',
+                      downloadButton('report', 'Report'),
+                      downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
+                      fileInput('readAssignment', 'Zuordnung Hochladen',
                                 accept = c('text/csv',
                                            'text/comma-separated-values',
                                            'text/plain',
@@ -598,7 +603,8 @@ server <- function(input, output, session) {
     
     table_data = data %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
-      group_by(entity_id) %>% summarise(
+      group_by(entity_id) %>%
+      summarise(
         num_units=n(),
         min_dist=min(min, na.rm=T),
         avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
@@ -779,9 +785,38 @@ server <- function(input, output, session) {
         select(unit_id, entity_id) %>%
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
+    })
+
+  output$report = downloadHandler(
+    filename = paste0('report_', Sys.Date(), '.pdf'),
+    content = function(con) {
+      # ensure write permissions, cf. http://shiny.rstudio.com/gallery/generating-reports.html
+      temp_file = file.path(tempdir(), 'assignment_report_de.Rmd')
+      file.copy('templates/assignment_report_de.Rmd', temp_file, overwrite = TRUE)
+      # load map
+      map_path = 'data/berlin.rds'
+      if (file.exists(map_path)) {
+        berlin = read_rds(map_path)
+      } else {
+        berlin = ggmap::get_map('Berlin')
+        write_rds(berlin, map_path, compress = 'gz')
+      }
+      isolate(rmarkdown::render(
+        temp_file,
+        output_file = con,
+        envir = new.env(parent = globalenv()),  # isolate rendering
+        params = list(
+          map = berlin,
+          units = r$units,
+          entities = r$entities,
+          NO_ASSIGNMENT = NO_ASSIGNMENT,
+          colors = color_vec,
+          optimizable_units = optimizable_units,
+          weights = weights
+        )
+      ))
     }
   )
-
 }
 
 shinyApp(ui, server)
