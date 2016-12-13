@@ -27,8 +27,8 @@ entities = rgdal::readOGR(file.path(data_path, 'entities.geojson'),
                           layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 weights = readr::read_csv(file.path(data_path, 'weights.csv'))
 
-# assign_path = file.path(data_path, 'assignment.csv')
-assign_path = '/home/moritz/Downloads/assignment_2016-12-13.csv'
+assign_path = file.path(data_path, 'assignment.csv')
+# assign_path = '/home/moritz/Downloads/assignment_2016-12-13.csv'
 
 assignment = units@data %>%
   dplyr::select(unit_id) %>%
