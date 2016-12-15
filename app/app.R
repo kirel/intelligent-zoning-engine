@@ -546,7 +546,7 @@ server <- function(input, output, session) {
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 1
-    DIST_WEIGHT = 1/2000^2 # 2000m means penalty of 1
+    DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
     OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
     UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
