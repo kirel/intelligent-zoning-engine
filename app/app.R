@@ -1,70 +1,91 @@
-library(readr)
-library(dplyr)
-library(tidyr)
-library(leaflet)
-library(htmltools)
-library(purrr)
-library(colorspace)
-library(ggplot2)
-library(shiny)
-library(DT)
-library(memoise)
-library(future)
+source('deps.R')
+source('ga.R')
 
 plan(multiprocess)
 
 options(shiny.autoreload=T)
+options(shiny.host="0.0.0.0")
 options(warn=-1)
 
-LOG='debug.log' # stderr()
+flog.threshold(DEBUG)
+flog.appender(appender.file('optimization.log'), name='optimization')
+flog.debug('Logging setup complete')
+
+NONE_SELECTED = '__NONE_SELECTED__'
+NO_ASSIGNMENT = NONE_SELECTED
 
 # Load data
-solution = read_rds('data/init_solution.rds') %>% select(BLK, school)
-blocks = read_rds('data/blocks.rds') %>% sp::merge(solution)
-bez = read_rds('data/bez.rds')
-schools = read_rds('data/schools.rds')
-block_stats = read_rds('data/block_stats.rds')
-kids_in_blocks = block_stats %>% group_by(BLK) %>% summarise(num_kids=first(kids))
-school_ids = unique(as.character(schools$spatial_name))
-block_ids = unique(as.character(blocks$BLK))
+units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+weights = read_csv('data/weights.csv')
 
-# Prepare data
-blocks[is.na(blocks$school),'school'] = ''
-# takes blocks spdf and returns new school assignments
-school_ids = as.character(schools$spatial_name)
-block_ids = unique(as.character(block_stats$BLK)) # blocks with stats
+assignment = units@data %>%
+  select(unit_id) %>%
+  left_join(read_csv('data/assignment.csv'), by='unit_id') %>%
+  mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id))
 
-# An individual is an assignment data frame BLK->school
-# every gene is an assignment BLK->school
+units = units %>% sp::merge(assignment)
+
+rm(assignment)
+
+bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE) %>% subset(BEZ == '07')
+
+entity_ids = unique(entities$entity_id)
+unit_ids = unique(units$unit_id)
+optimizable_units = units %>% as.data.frame %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
+
+flog.debug('Data loading complete')
+
+### Helper functions
+
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
 
 # preferrably sample blocks closer to the school
 # should be higher for smaller numbers
-distance_sample_weights = block_ids %>% map(function(block_id) {
-  idx = block_stats$BLK == block_id
-  avg = as.double(block_stats[idx,]$avg)
-  school = block_stats[idx,]$dst
+distance_sample_weights = unit_ids %>% map(function(unit_id) {
+  idx = weights$unit_id == unit_id
+  avg = as.double(weights[idx,]$avg)
+  entity_ids = weights[idx,]$entity_id
   # TODO make function and divide exponent by optimization step
   weights = (1-(avg-min(avg))/max(avg-min(avg)))^3
-  set_names(weights, school)
-}) %>% set_names(block_ids)
+  set_names(weights, entity_ids)
+}) %>% set_names(unit_ids)
 
-distance_sample_probs = function(block, heuristic_exponent=3) {
-  weights = distance_sample_weights[[block]]
+distance_sample_probs = function(unit_id, heuristic_exponent=3) {
+  weights = distance_sample_weights[[unit_id]]
   pot_weights = weights^heuristic_exponent
   pot_weights/sum(pot_weights)
 }
 
-block_index = set_names(1:length(blocks$BLK), blocks$BLK)
-blocks$selected = T # when the shool is selected
-blocks$updated = F
-schools$selected = T
-schools$updated = F
+unit_index = set_names(1:length(units$unit_id), units$unit_id)
+
+entities$selected = F
+# Remark: There is no entities$updated because they have to be redrawn anyway
+entities$highlighted = T # highlight when selected
+entities$hovered = F
+units$selected = F # selected units can be reassigned, locked, etc
+units$highlighted = T # highlight units when assigned entity is selected
+units$locked = F
+units$updated = T # only updated unites need to be redrawn (true for initial render)
+units$hovered = F
 
 # Scales
-cfac = colorFactor(rainbow(length(school_ids)), levels=sample(school_ids))
-school_colors = function(school_id, desaturate) {
-  color = cfac(school_id)
-  ifelse(desaturate, desat(color, 0.2), color)
+# cfac = colorFactor(rainbow(length(entity_ids)), levels=sample(entity_ids))
+colors = brewer.pal(8, 'Set1') # show_col(brewer.pal(9,'Set1'))
+valid_colors = colors[2:8]
+warning_color =  colors[1]
+entity_ids_color = c(
+  "07G16", "07G02", "07G01", "07G21", "07G14", "07G07", "07G15", "07G03", "07G13", "07G12", "07G10", "07G17", "07G06", "07G18",
+  "07G19", "07G24", "07G05", "07G22", "07G23", "07G25", "07G20", "07G36", "07G27", "07G37", "07G35", "07G30", "07G28", "07G32",
+  "07G29", "07G34", "07G26", "07G31"
+)
+palette = rep(valid_colors, length(entity_ids_color)/length(valid_colors)+1)[1:length(entity_ids_color)]
+cfac = colorFactor(palette, levels=entity_ids_color)
+entity_colors = function(entity_id, desaturate) {
+  color = cfac(entity_id)
+  ifelse(desaturate, desat(color, 0.3), color)
 }
 
 desat <- function(cols, sat=0.5) {
@@ -72,32 +93,65 @@ desat <- function(cols, sat=0.5) {
   hsv(X[1,], X[2,], X[3,])
 }
 
+# Colors for Report
+
+color_vec = c(palette, warning_color)
+names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
+
 ### UI
 ui <- fillPage(
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
-    tags$style(HTML(
-    "
-    #map-panel { height: calc(100% - 240px); }
-    #table-panel { height: 100%; overflow: scroll; }
-    .capacity-ok { color: green; }
-    .capacity-ok .glyphicon-remove { display: none; }
-    .capacity-panic { color: red; }
-    .capacity-panic .glyphicon-ok { display: none; }
-    .change-up .glyphicon-arrow-down { display: none; }
-    .change-down .glyphicon-arrow-up { display: none; }
-    .no-change { color: transparent; }
-    "))),
+    tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")
+  ),
+  # stripes pattern
+  div(
+    id='svg-patterns',
+    HTML('<svg height="5" width="5" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="locked-pattern" patternUnits="userSpaceOnUse" width="5" height="5"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cGF0aCBkPSJNMCA1TDUgMFpNNiA0TDQgNlpNLTEgMUwxIC0xWiIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+" x="0" y="0" width="5" height="5"> </image> </pattern> </defs> </svg>'),
+    HTML('<svg height="10" width="10" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="diagonal-stripe-1" patternUnits="userSpaceOnUse" width="10" height="10"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+CiAgPHJlY3Qgd2lkdGg9JzEwJyBoZWlnaHQ9JzEwJyBmaWxsPSd3aGl0ZScvPgogIDxwYXRoIGQ9J00tMSwxIGwyLC0yCiAgICAgICAgICAgTTAsMTAgbDEwLC0xMAogICAgICAgICAgIE05LDExIGwyLC0yJyBzdHJva2U9J2JsYWNrJyBzdHJva2Utd2lkdGg9JzEnLz4KPC9zdmc+Cg==" x="0" y="0" width="10" height="10"> </image> </pattern> </defs> </svg>'),
+    HTML('<svg height="8" width="8" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="crosshatch" patternUnits="userSpaceOnUse" width="8" height="8"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4JyBoZWlnaHQ9JzgnPgogIDxyZWN0IHdpZHRoPSc4JyBoZWlnaHQ9JzgnIGZpbGw9JyNmZmYnLz4KICA8cGF0aCBkPSdNMCAwTDggOFpNOCAwTDAgOFonIHN0cm9rZS13aWR0aD0nMC41JyBzdHJva2U9JyNhYWEnLz4KPC9zdmc+Cg==" x="0" y="0" width="8" height="8"> </image> </pattern> </defs> </svg>
+')
+  ),
   fillRow(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
-      uiOutput('school'),
-      #uiOutput('block'),
-      uiOutput('optimize', inline = TRUE),
-      actionButton('randomize', 'Randomisieren'),
-      plotOutput('fitness', height = '150px')
+      tabsetPanel(type="tabs",
+                  tabPanel("Details", div(id='detail',
+                      fillRow(
+                        div(id='detail--units',
+                            p(uiOutput('selected_units')),
+                            actionButton('deselect_units', 'Auswahl aufheben'),
+                            actionButton('assign_units', 'Zuordnen'),
+                            actionButton('deassign_units', 'Löschen'),
+                            actionButton('lock_units', 'Verriegeln'),
+                            actionButton('unlock_units', 'Entriegeln'),
+                            tableOutput('selected_units_table')
+                        ),
+                        div(id='detail--entity',
+                            h4(textOutput('selected_entity')),
+                            actionButton('deselect_entity', 'Auswahl aufheben'),
+                            tableOutput('selected_entity_table')
+                        )
+                      )
+                      # TODO move buttons into UI outputs
+                  )),
+                  tabPanel("Import/Export", div(id='io',
+                      downloadButton('report', 'Report'),
+                      downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
+                      fileInput('readAssignment', 'Zuordnung Hochladen',
+                                accept = c('text/csv',
+                                           'text/comma-separated-values',
+                                           'text/plain',
+                                           '.csv')
+                                )
+                  )),
+                  tabPanel("Optimierung", div(id='optimize',
+                      uiOutput('optimize_button', inline = TRUE),
+                      plotOutput('fitness', height = '120px')
+                  ))
+      )
     ),
     div(
       id='table-panel',
@@ -112,189 +166,277 @@ server <- function(input, output, session) {
   ### Reactive Values
 
   r <- reactiveValues(
-    blocks=blocks, schools=schools,
+    units=units, entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
-    selected_block='', selected_school='', selected_school_index=NULL,
+    selected_entity=NONE_SELECTED,
+    previous_selected_entity=NONE_SELECTED,
+    selected_entity_index=NULL, # only one can be selected
     running_optimization=FALSE,
     ga_population_future=future(NULL),
     optimization_step=0,
-    previous_mouseover='')
+    previous_mouseover=NONE_SELECTED)
 
   ### Interaction
 
   observeEvent(input$optimize, {
+    flog.debug('Optimize button pressed')
     if (r$running_optimization) {
       r$running_optimization = FALSE
     } else {
       r$running_optimization = TRUE
     }
   })
+  
+  observeEvent(input$assign_units, {
+    flog.debug('Assign button pressed')
+    r$units[r$units$selected, 'entity_id'] = r$selected_entity
+    r$units[r$units$selected, 'highlighted'] = T
+    r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(input$deassign_units, {
+    flog.debug('Deassign button pressed')
+    r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
+    r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
+    r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(input$deselect_units, {
+    flog.debug('Deselect button pressed')
+    r$units[r$units$selected, 'updated'] = T
+    r$units$selected = F
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(input$lock_units, {
+    flog.debug('Lock button pressed')
+    r$units[r$units$selected, 'locked'] = T
+    r$units[r$units$selected, 'updated'] = T
+  })
+  
+  observeEvent(input$unlock_units, {
+    flog.debug('Unlock button pressed')
+    r$units[r$units$selected, 'locked'] = F
+    r$units[r$units$selected, 'updated'] = T
+  })
+  
+  observeEvent(input$deselect_entity, {
+    flog.debug('Deselect button pressed')
+    r$selected_entity = NONE_SELECTED
+  }) 
 
-  # block mouseover -> highlight the shape
+  observeEvent(input$readAssignment, {
+    flog.debug('upload button pressed')
+    num_warn = length(warnings())
+    upload = read_csv(input$readAssignment$datapath)
+    num_warn = length(warnings()) - num_warn
+    validate(
+      need(num_warn == 0,
+           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+      # need(),  # all unit_ids must be valid
+      # need()  # all entity_ids must be valid
+    )
+    prev_entities = r$units$entity_id
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(upload, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
+    r$units$updated = TRUE
+    r$assignment_rev = r$assignment_rev + 1
+  })
+
+  # unit mouseover -> highlight the shape
   observe({
+    return()
     req(input$map_shape_mouseover$id)
+    req(input$map_shape_mouseover$group)
+    flog.debug('mouseover event')
     if (input$map_shape_mouseover$id != isolate(r$previous_mouseover)) {
       # run this again and only set selected block if we're over the same shape after 100ms
       r$previous_mouseover = input$map_shape_mouseover$id
       invalidateLater(100, session)
-    } else if (grepl('block_', input$map_shape_mouseover$id)) {
-      # select the respective block
-      r$selected_block = substring(input$map_shape_mouseover$id, 7)
+    } else if (input$map_shape_mouseover$group == 'units') {
+      # hover the respective block
+      hovered_unit = sub('unit_', '', input$map_shape_mouseover$id)
+      flog.debug('mouseover %s', hovered_unit)
+      isolate({
+        r$units[r$units$hovered, 'updated'] = T
+        r$units$hovered = F
+        r$units[unit_index[[hovered_unit]], 'hovered'] = T
+        r$units[unit_index[[hovered_unit]], 'updated'] = T
+      })
     }
   })
 
   observeEvent(input$map_shape_mouseout, {
+    return()
     req(input$map_shape_mouseout$id)
-    if (grepl('block_', input$map_shape_mouseout$id)) {
-      # deselect the respective block
-      r$selected_block = ''
+    req(input$map_shape_mouseout$group)
+    flog.debug('mouseout event')
+    if (input$map_shape_mouseout$group == 'units') {
+      # unhover the respective block
+      hovered_unit = sub('unit_', '', input$map_shape_mouseout$id)
+      flog.debug('mouseout %s', hovered_unit)
+      r$units[unit_index[[hovered_unit]], 'hovered'] = F
+      r$units[unit_index[[hovered_unit]], 'updated'] = T
     }
   })
 
-  # click on markers -> select school and blocks
+  # click on markers -> select entity and highlight units
+  # only changes r$selected_entity and r$selected_entity_index
   observeEvent(input$map_marker_click, {
     req(input$map_marker_click$id)
-    clicked_marker = input$map_marker_click$id
-    r$selected_school = ifelse(clicked_marker == isolate(r$selected_school), '', clicked_marker)
-    index = schools$spatial_name %>% detect_index(~ .x == r$selected_school)
-    if (is.null(index) | index == 0) r$selected_school_index = NULL else r$selected_school_index = index
-    r$selected_block = ''
+    req(input$map_marker_click$group)
+    flog.debug('marker %s clicked', input$map_marker_click$id)
+    isolate({
+      if (input$map_marker_click$group == "entities") {
+        clicked_marker = sub('entity_', '', input$map_marker_click$id)
+        r$previous_selected_entity = r$selected_entity
+        r$selected_entity = ifelse(clicked_marker == r$selected_entity, NONE_SELECTED, clicked_marker)
+        index = entities$entity_id %>% detect_index(~ .x == r$selected_entity)
+        if (is.null(index) | index == 0) r$selected_entity_index = NULL else r$selected_entity_index = index
+      }
+    })
+    # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
 
+  # click on table row
+  # only changes r$selected_entity and r$selected_entity_index
   observe({
     row = input$table_rows_selected
+    flog.debug('row %s clicked', row)
     isolate({
-      r$selected_school_index = row
-      r$selected_school = ifelse(is.null(row), '', schools$spatial_name[row])
-      r$selected_block = ''
+      r$selected_entity_index = row
+      r$selected_entity = ifelse(is.null(row), NONE_SELECTED, entities$entity_id[row])
     })
+    # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
 
-  # click on shapes -> update the solution
+  # click on shapes -> update the selected status
   observeEvent(input$map_shape_click, {
-    if (grepl('block_', input$map_shape_click$id)) {
-      # a block was clicked
-      clicked_block = sub('block_', '', input$map_shape_click$id)
-      r$selected_block = clicked_block
+    req(input$map_shape_click$id)
+    req(input$map_shape_click$group)
+    flog.debug('shape %s clicked', input$map_shape_click$id)
+    if (input$map_shape_click$group == 'units') {
+      # a unit was clicked
+      clicked_unit = sub('unit_', '', input$map_shape_click$id)
+      # flip clicked unit
+      r$units[r$units$unit_id == clicked_unit, 'selected'] = !r$units[r$units$unit_id == clicked_unit,]$selected
+      r$units[r$units$unit_id == clicked_unit, 'updated'] = T
+      
+      # FIXME don't
       # update the solution
-      currently_assigned_school = r$blocks[r$blocks$BLK == r$selected_block,]$school
-      r$blocks[r$blocks$BLK == r$selected_block, 'school'] = ifelse(r$selected_school != currently_assigned_school, r$selected_school, '')
-      r$blocks$updated = F
-      r$blocks[r$blocks$BLK == r$selected_block, 'updated'] = T
-      r$blocks[r$blocks$BLK == r$selected_block, 'selected'] = T
-      r$assignment_rev = r$assignment_rev + 1
+      # currently_assigned_entity = r$units[r$units$unit_id == r$selected_unit,]$entity_id
+      # FIXME 3 times indexing the same thing - can this be faster?
+      # r$units[r$units$unit_id == r$selected_unit, 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NONE_SELECTED)
+      # r$units$updated = F
+      # r$units[r$units$unit_id == r$selected_unit, 'updated'] = T
+      # r$units[r$units$unit_id == r$selected_unit, 'selected'] = T
+      # r$assignment_rev = r$assignment_rev + 1
 
       # cancel optimization step (which is now invalid)
       resetOptimization()
     }
   })
 
-  # school selection changed - update blocks
+  # r$selected_entity watcher: entity selection changed - update blocks
   observe({
-    selected_school = r$selected_school
+    selected_entity = r$selected_entity
+    
     isolate({
-      schools_selected_before = r$schools$selected
-      r$schools$selected = selected_school == ''
-      r$schools[r$schools$spatial_name == selected_school, 'selected'] = T
-      r$schools$updated = r$schools$updated | (r$schools$selected != schools_selected_before)
-      blocks_selected_before = r$blocks$selected
-      r$blocks$selected = selected_school == ''
-      r$blocks[r$blocks$school == selected_school, 'selected'] = T
-      r$blocks$updated = r$blocks$updated | (r$blocks$selected != blocks_selected_before)
+      flog.debug("selected entity changed to %s from %s", r$selected_entity, r$previous_selected_entity)
+
+      previously_highlighted = rep(r$entities$highlighted)
+      r$entities$highlighted = r$entities$entity_id == selected_entity | selected_entity == NONE_SELECTED
+
+      previously_highlighted = rep(r$units$highlighted)
+      r$units$highlighted = r$units$entity_id == selected_entity | selected_entity == NONE_SELECTED
+      r$units$updated = r$units$updated | (r$units$highlighted != previously_highlighted)
     })
   })
 
   ### Update the UI
 
+  updateMap = function(map, units) {
+    flog.debug('updateMap')
+    flog.debug('nrow(units) %s', nrow(units))
+    if (nrow(units) > 0) {
+      flog.debug('redrawing units')
+      map = map %>%
+        # redraw updated selected units
+        addPolygons(
+          data=units, group='units', layerId=~paste0('unit_', unit_id),
+          stroke = F, fillOpacity = 1, smoothFactor = 0.2,
+          color = ~ ifelse( # TODO factor into function
+              entity_id == NONE_SELECTED & unit_id %in% optimizable_units,
+              ifelse(!highlighted, desat(warning_color, 0.3), warning_color),
+              entity_colors(entity_id, desaturate = !highlighted)
+              )
+        ) %>%
+        # locked
+        addPolygons(
+          data=units, color=NULL, fillOpacity=NULL,
+          group='locked_units', layerId=~paste0('locked_unit_', unit_id),
+          options=pathOptions(pointerEvents='none', className=~ifelse(locked, 'locked', 'unlocked'))
+        ) %>%
+        # draw boundaries of selected units
+        addPolylines(
+          data=units, color=~ifelse(selected, 'red', 'transparent'), weight=4,
+          group='selected_units', layerId=~paste0('selected_unit_', unit_id),
+          options=pathOptions(pointerEvents='none', className='selected_units')
+        )
+    }
+    # always draw entities on top
+    map = map %>%
+      addCircleMarkers(
+        data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
+      )
+    return(map)
+  }
+  
   # Initial map render
   output$map <- renderLeaflet({
-
-    m <- leaflet() %>%
-      addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
-      addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
-      addPolygons(
-        data=isolate(r$blocks), group='blocks', layerId=~paste0('block_',BLK),
-        stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~school_colors(school, !selected)
-        ) %>%
-      addCircleMarkers(
-        data=isolate(r$schools), group='schools', layerId=~spatial_name,
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
-        )
-    m
-
+    isolate({
+      m <- leaflet() %>%
+        addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
+        addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
+        updateMap(r$units)
+      r$units$updated = F
+      flog.debug('Map initialized')
+      m      
+    })
   })
 
   # incremental map update
   observe({
-    updated_blocks = r$blocks[r$blocks$updated,]
-    if (nrow(updated_blocks) > 0) {
-      leafletProxy("map") %>%
-        addPolygons(
-          data=updated_blocks, group='blocks', layerId=~paste0('block_',BLK),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~school_colors(school, !selected)
-        )
-    }
-    leafletProxy("map") %>%
-      addCircleMarkers(
-        data=r$schools, group='schools', layerId=~spatial_name,
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
-      )
-    r$blocks$updated = F
-    r$schools$updated = F
-  })
-
-  # block highlight marker
-  observe({
-    if (r$selected_block != '') {
-      highlighted_block = r$blocks[block_index[r$selected_block],]
-      leafletProxy("map") %>%
-        addPolylines(data=highlighted_block, color='red', weight=4, layerId='highlighted_block') %>%
-        addPolygons(
-          data=highlighted_block, group='blocks', layerId=~paste0('block_',BLK),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2, color= ~school_colors(school, !selected)
-        ) %>%
-        addCircleMarkers(
-          data=r$schools, group='schools', layerId=~spatial_name,
-          fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~school_colors(spatial_name, !selected)
-        )
-    } else {
-      leafletProxy("map") %>%
-        removeShape('highlighted_block')
-    }
+    updated_units = r$units[r$units$updated,]
+    isolate({
+      leafletProxy("map") %>% updateMap(updated_units)
+    })
+    r$units$updated = F
+    flog.debug('Map updated')
   })
 
   ### optimization
-
-  # Randomize (to test optimization)
-  observeEvent(input$randomize, {
-    random = blocks %>% as.data.frame() %>%
-      filter(BLK %in% block_ids) %>%
-      select(BLK, school) %>%
-      mutate(school=sample(school_ids, nrow(.), replace = T))
-
-    new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(random, by="BLK") %>% .$school
-    r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
-    r$blocks$updated = T
-
-    r$ga_population = list(random)
-
-    r$assignment_rev = r$assignment_rev + 1
-  })
 
   # make sure there is at least one individual in the population
   # see main optimization loop
   add_current_to_ga_population = function() {
     # select only blocks with stats and assign random schools for unassigned blocks
-    current = blocks %>% as.data.frame() %>%
-      filter(BLK %in% block_ids) %>%
-      select(BLK) %>% left_join(r$blocks %>% as.data.frame() %>% select(BLK, school), by='BLK') %>%
-      mutate(school=ifelse(school == '', sample(school_ids, length(is.na(school)), replace = T), school))
+    current = units %>% as.data.frame() %>%
+      filter(unit_id %in% optimizable_units) %>%
+      select(unit_id) %>% left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id), by='unit_id') %>%
+      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
 
     r$ga_population = list(current)
   }
   
   resetOptimization = function() {
-    cat('Resetting optimization before step', r$optimization_step, 'finished\n', file=stderr())
+    flog.info('Resetting optimization before step %s finished', r$optimization_step)
     r$optimization_step = 0
     # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
     forget(mem_fitness_f)
@@ -312,7 +454,7 @@ server <- function(input, output, session) {
         
         # if there is a resolved ga_population_future take the result and update all the things, then start a new one
         if (resolved(r$ga_population_future)) {
-          cat('Finished optimization step', r$optimization_step, '\n', file=stderr())
+          flog.info('Finished optimization step %s', r$optimization_step)
           future_population = value(r$ga_population_future)
           if (r$optimization_step > 0 && !is.null(future_population)) {
             r$ga_population = future_population
@@ -321,22 +463,25 @@ server <- function(input, output, session) {
             r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
             
             # update relevant values for ui updates
-            prev_schools = r$blocks$school
-            new_schools = r$blocks %>% as.data.frame() %>% select(BLK) %>% left_join(fittest, by="BLK") %>% .$school
-            r$blocks$school = ifelse(is.na(new_schools), '', new_schools)
-            r$blocks$updated = r$blocks$school != prev_schools
+            prev_entities = r$units$entity_id
+            new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(fittest, by="unit_id") %>% .$entity_id
+            r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
+            r$units$updated = r$units$updated | r$units$entity_id != prev_entities
             
             r$assignment_rev = r$assignment_rev + 1
           }
           
+          # Start new optimization step
           r$optimization_step = r$optimization_step + 1
           heuristic_exponent = 20/r$optimization_step^(1) # TODO = 1/2?
           mutation_fraction = max(0.001, 1-(r$optimization_step-1)/3)
-          cat('Running optimization step', r$optimization_step, 'with mutation_fraction', mutation_fraction, 'and heuristic_exponent', heuristic_exponent, '\n', file=stderr())
+          flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', r$optimization_step, mutation_fraction, heuristic_exponent)
           
           r$ga_population_future = future({
             ga_select(
               ga_breed(r$ga_population,
+                       ga_mutate=mutation_f,
+                       ga_crossover=crossover_f,
                        fitness_f=mem_fitness_f,
                        mutation_fraction=mutation_fraction,
                        num_pairs = 50,
@@ -364,176 +509,143 @@ server <- function(input, output, session) {
   ### genetic algorithm
   
   # randomly reassign a number of schools
-  ga_mutate = function(individual, fraction=0.05, heuristic_exponent=3) {
+  mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
     num_mutations = ceiling(fraction*nrow(individual))
     # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
     # TODO divide exponent by optimization step
-    prob = individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
+    prob = individual %>% inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       transmute(avg=avg, cost=(avg/max(avg))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
     #cost = rep(1, nrow(individual))
     #cost = 1-cost
     mutation_idx = sample(1:nrow(individual), num_mutations, prob = prob)
-    mutation_blks = as.character(individual[mutation_idx, 'BLK'])
+    mutation_units = as.character(individual[mutation_idx, 'unit_id'])
+    # TODO flip pairs instead of random assignment
     # preferrably select schools closer to the block
-    mutations = mutation_blks %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
-    individual[mutation_idx, 'school'] = unlist(mutations)
+    mutations = mutation_units %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
+    individual[mutation_idx, 'entity_id'] = unlist(mutations)
     individual
   }
 
   # randomly mix assignments from two individuals into two new ones
   # TODO only where they are different
-  ga_crossover = function(a, b) {
+  crossover_f = function(a, b) {
     # only select from genes that are different
-    difference = a$school != b$school
+    difference = a$entity_id != b$entity_id
     if (sum(difference)==0) return(list(a, b))
     child_a = a[,]
     child_b = b[,]
     fraction = runif(1)
     num_genes = ceiling(fraction*sum(difference))
     swap_idx = sample((1:nrow(a))[difference], num_genes)
-    child_a[swap_idx, 'school'] = b[swap_idx, 'school']
-    child_b[swap_idx, 'school'] = a[swap_idx, 'school']
+    child_a[swap_idx, 'entity_id'] = b[swap_idx, 'entity_id']
+    child_b[swap_idx, 'entity_id'] = a[swap_idx, 'entity_id']
     list(child_a, child_b)
   }
 
-  # takes a list of individuals and breeds new ones in addition
-  # returns the new population (that includes the old one)
-  ga_breed = function(population, fitness_f, num_pairs = 50, num_mutants = 100, mutation_fraction=0.001, heuristic_exponent=3) {
-    # precalculate sampling weights for sampling from the fittest
-    fitness = unlist(map(population, fitness_f))
-    cat('original population fitness', summary(fitness), '\n', file=LOG)
-    weights = -fitness+min(fitness)+max(fitness)
-    prob = weights/sum(weights)
-
-    cat('Mutating', num_mutants, 'individuals\n', file=stderr())
-    mutated = population %>%
-      sample(num_mutants, replace = T, prob = prob) %>% # sample based on fitness
-      map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
-    if (length(mutated)>0) cat('mutated fitness', summary(unlist(map(mutated, fitness_f))), '\n', file=LOG)
-    
-    mating_population = c(population, mutated)
-    if (length(mating_population) > 1) {
-      mating_fitness = unlist(map(mating_population, fitness_f))
-      mating_weights = -mating_fitness+min(mating_fitness)+max(mating_fitness)
-      mating_prob = mating_weights/sum(mating_weights)
-      
-      cat('Mating', num_pairs, 'pairs\n', file=LOG)
-      pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob)) # sample based on fitness
-      mated = do.call(c, map(pairs, ~ do.call(ga_crossover, .x)))
-      cat('mated fitness', summary(unlist(map(mated, fitness_f))), '\n', file=LOG)
-    } else {
-      mated = list()
-    }
-    
-    # original population, mutated population and mated population
-    new_population = c(
-      population,
-      mutated,
-      mated
-    )
-  }
-
-  # selects the fittest individuals according to a fitness function
-  ga_select = function(population, fitness_f, survival_fraction=1, max_population=50) {
-    cat('Population size', length(population), '\n', file=LOG)
-    population = sort_by(unique(population), fitness_f)
-    cat(length(population), 'unique\n', file=LOG)
-    num_survivors = min(ceiling(length(population)*survival_fraction), max_population)
-    cat('Keeping', num_survivors, 'survivors\n', file=LOG)
-    #survivors = population[rank(unlist(fitness), t = 'r') <= num_survivors]
-    survivors = population[1:num_survivors]
-    survivors
-  }
-
-  ### /genetic algorithm
-
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
-    UNDER_CAPACITY_PENALTY = 0.1
-    DIST_WEIGHT = 1
-    OVER_CAPACITY_WEIGHT = 1
-    UNDER_CAPACITY_WEIGHT = 1
-    individual %>% inner_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      group_by(school) %>%
-      summarise(kids=sum(kids), Kapa=first(Kapa), avg=sqrt(mean(avg^2))) %>%
-      #summarise(kids=sum(kids), Kapa=first(Kapa), avg=sum(avg^2*kids)) %>%
-      rowwise() %>% mutate(over_capacity=max(1, kids-Kapa), under_capacity=max(1, Kapa-kids)) %>% ungroup %>%
+    UNDER_CAPACITY_PENALTY = 1
+    DIST_WEIGHT = 1/2000^2 # 2000m means penalty of 1
+    OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
+    UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
+    individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
+      inner_join(weights, by=c('unit_id', 'entity_id')) %>%
+      group_by(entity_id) %>%
+      summarise(
+        avg=sum(avg*population)/sum(population), # population weighted mean
+        max=sum(max*population)/sum(population), # population weighted max # TODO remove?
+        population=sum(population)
+        ) %>%
+      inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
+      rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
-      summarise(avg=mean(avg), over_capacity_penalty=mean(over_capacity_penalty), under_capacity_penalty=mean(under_capacity_penalty)) %>%
+      summarise(
+        avg=mean(avg^2), # squared average distance
+        max=mean(max^2), # squared average distance
+        over_capacity_penalty=mean(over_capacity_penalty),
+        under_capacity_penalty=mean(under_capacity_penalty)
+        ) %>%
+      mutate(
+        avg = DIST_WEIGHT*avg,
+        max = DIST_WEIGHT*max,
+        over_capacity_penalty = OVER_CAPACITY_WEIGHT*over_capacity_penalty,
+        under_capacity_penalty = UNDER_CAPACITY_WEIGHT*under_capacity_penalty
+        ) %>%
       (function(x) {
-        if (runif(1)<0) {
-        #if (runif(1)<0.1) {
-          cat('Distance error:', DIST_WEIGHT*x$avg, '\n', file=LOG)
-          cat('Over capacity error:', OVER_CAPACITY_WEIGHT*x$over_capacity_penalty, '\n', file=LOG)
-          cat('Under capacity error:', UNDER_CAPACITY_WEIGHT*x$under_capacity_penalty, '\n', file=LOG)
+        #if (runif(1)<0) {
+        if (runif(1)<0.01) {
+          flog.debug('Random sample error components', name='optimization')
+          flog.debug('Avg distance error: %s', x$avg, name='optimization')
+          flog.debug('Max distance error: %s', x$max, name='optimization')
+          flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
+          flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
         }
         x
       }) %>%
-      mutate(fitness = DIST_WEIGHT*avg +
-               OVER_CAPACITY_WEIGHT*over_capacity_penalty +
-               UNDER_CAPACITY_WEIGHT*under_capacity_penalty) %>% .$fitness
+      mutate(fitness = max + over_capacity_penalty + under_capacity_penalty) %>% .$fitness
   }
 
   mem_fitness_f = memoise(fitness_f)
+  
+  ### /genetic algorithm
 
   ### table
 
   reactive_table_data = reactive({
-    r$assignment_rev # recalculate of assignment_rev is altered
-    data = isolate(r$blocks) %>% as.data.frame() %>%
-      mutate(school=ifelse(school == '', 'Keine', school))
+    r$assignment_rev # recalculate if assignment_rev is altered
+    data = isolate(r$units) %>% as.data.frame() %>%
+      filter(entity_id != NO_ASSIGNMENT)
 
+    # alternative data for staged assignment
+    # FIXME add actual data
     alternative = data
-    if (r$selected_block != '') {
-      currently_assigned_school = alternative[block_index[r$selected_block],]$school
-      alternative[block_index[r$selected_block], 'school'] = ifelse(r$selected_school != currently_assigned_school, r$selected_school, '')
-      alternative = alternative %>% mutate(school=ifelse(school == '', 'Keine', school))
-    }
-
+    
     table_data = data %>%
-      left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      left_join(kids_in_blocks, by='BLK') %>%
-      group_by(school) %>% summarise(
-        kids=sum(num_kids, na.rm=T),
-        num_blocks=n(),
-        min_time=min(min, na.rm=T),
-        avg_time=mean((kids*avg)/sum(kids, na.rm=T), na.rm=T),
-        max_time=max(max, na.rm=T),
-        Kapa=first(Kapa)
+      left_join(weights, by=c('unit_id', 'entity_id')) %>%
+      group_by(entity_id) %>%
+      summarise(
+        num_units=n(),
+        min_dist=min(min, na.rm=T),
+        avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
+        max_dist=max(max, na.rm=T),
+        pop=sum(population, na.rm=T),
+        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
+      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
-        utilization=kids/Kapa
+        utilization=pop/capacity
       )
 
     alternative_table_data = alternative %>%
-      left_join(block_stats, by=c('BLK'='BLK', 'school'='dst')) %>%
-      left_join(kids_in_blocks, by='BLK') %>%
-      group_by(school) %>% summarise(
-        kids=sum(num_kids, na.rm=T),
-        num_blocks=n(),
-        min_time=min(min, na.rm=T),
-        avg_time=mean((kids*avg)/sum(kids, na.rm=T), na.rm=T),
-        max_time=max(max, na.rm=T),
-        Kapa=first(Kapa)
+      left_join(weights, by=c('unit_id', 'entity_id')) %>%
+      group_by(entity_id) %>% summarise(
+        num_units=n(),
+        min_dist=min(min, na.rm=T),
+        avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
+        max_dist=max(max, na.rm=T),
+        pop=sum(population, na.rm=T),
+        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
+      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
       mutate(
-        utilization=kids/Kapa
+        utilization=pop/capacity
       )
 
-    diff = select(alternative_table_data, -school) - select(table_data, -school)
+    diff = select(alternative_table_data, -entity_id) - select(table_data, -entity_id) # FIXME how is sorting ensured?
 
     table_data['delta_utilization'] = diff$utilization
     table_data %>%
       select(
-        Schule=school,
-        Kapazität=Kapa,
-        Kinder=kids,
+        Schule=entity_id,
+        Kapazität=capacity,
+        Kinder=pop,
         Auslastung=utilization,
         `ΔAusl.`=delta_utilization,
-        `Weg (min)`=min_time,
-        `Weg (Ø)`=avg_time,
-        `Weg (max)`=max_time
+        `SGBII(u.65)`=sgbIIu65,
+        #`Weg (min)`=min_dist,
+        `Weg (Ø)`=avg_dist,
+        `Weg (max)`=max_dist
       )
 
   })
@@ -568,8 +680,12 @@ server <- function(input, output, session) {
         options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
-      formatPercentage(c('Auslastung', 'ΔAusl.'), digits = 2) %>%
-      formatRound(c('Kinder', 'Weg (min)', 'Weg (max)', 'Weg (Ø)')) %>%
+      formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
+      formatRound(c(
+        'Kinder',
+        #'Weg (min)',
+        'Weg (max)',
+        'Weg (Ø)')) %>%
       formatStyle(
         'Weg (Ø)',
         background = styleColorBar(data$`Weg (Ø)`, 'lightskyblue'),
@@ -577,13 +693,13 @@ server <- function(input, output, session) {
         backgroundRepeat = 'no-repeat',
         backgroundPosition = 'center'
       ) %>%
-      formatStyle(
-        'Weg (min)',
-        background = styleColorBar(data$`Weg (min)`, 'wheat'),
-        backgroundSize = '92% 80%',
-        backgroundRepeat = 'no-repeat',
-        backgroundPosition = 'center'
-      ) %>%
+      # formatStyle(
+      #   'Weg (min)',
+      #   background = styleColorBar(data$`Weg (min)`, 'wheat'),
+      #   backgroundSize = '92% 80%',
+      #   backgroundRepeat = 'no-repeat',
+      #   backgroundPosition = 'center'
+      # ) %>%
       formatStyle(
         'Weg (max)',
         background = styleColorBar(data$`Weg (max)`, 'coral'),
@@ -601,28 +717,106 @@ server <- function(input, output, session) {
   })
 
   observe({
-    tableProxy %>% selectRows(r$selected_school_index)
+    tableProxy %>% selectRows(r$selected_entity_index)
   })
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
+  
+  ### Variables for detail views
 
-  output$school = renderUI({
-    if (r$selected_school == '') {
-      div(h4('Keine Schule ausgewählt'))
+  output$selected_entity = renderText({
+    if (r$selected_entity != NONE_SELECTED) {
+      entity = entities@data %>% filter(entity_id == r$selected_entity)
+      paste(r$selected_entity, entity$SCHULNAME)
     } else {
-      school = schools %>% filter(spatial_name == r$selected_school)
-      div(h4(paste(r$selected_school, school$SCHULNAME)))
+      'Keine Schule ausgewählt'
     }
   })
+  
+  output$selected_entity_table = renderTable({
+    if (r$selected_entity != NONE_SELECTED) {
+      d = reactive_table_data()[reactive_table_data()$Schule == r$selected_entity,] %>%
+        transmute(
+          `Kapazität`=`Kapazität`,
+          Kinder=formatC(Kinder, digits=2, format='f'),
+          Auslastung=percent(Auslastung),
+          `SGBII(u.65)`=percent(`SGBII(u.65)`))
+      row.names(d) = 'values'
+      t(d)
+    }
+  }, colnames=F, rownames=T, spacing='xs', width='100%')
 
-  output$block = renderUI({
-    div(h4(r$selected_block))
+  output$selected_units = renderText({
+    if (sum(r$units$selected) > 0) {
+      selected_unit_ids = r$units$unit_id[r$units$selected]
+      do.call(paste, c(sep=', ', as.list(selected_unit_ids)))
+    } else {
+      'Keine Blöcke ausgewählt'
+    }
   })
+  
+  output$selected_units_table = renderTable({
+    if (sum(r$units$selected) > 0) {
+      selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
+        summarise(
+          Kinder=formatC(sum(population, na.rm=T), digits=2, format='f'),
+          `SGBII(u.65)`=percent(sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T))
+        )
+      row.names(selected_units_data) = 'values'
+      t(selected_units_data)
+    }
+  }, colnames=F, rownames=T, spacing='xs', width='100%')
+  
+  ### optimization
 
-  output$optimize = renderUI({
+  output$optimize_button = renderUI({
     actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
   })
+  
+  ### Export
+  
+  output$serveAssignment = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.csv')
+    },
+    content = function(con) {
+      data = isolate(r$units) %>%
+        as.data.frame() %>%
+        select(unit_id, entity_id) %>%
+        filter(entity_id != NO_ASSIGNMENT)
+      write_csv(data, con)
+    })
 
+  output$report = downloadHandler(
+    filename = paste0('report_', Sys.Date(), '.pdf'),
+    content = function(con) {
+      # ensure write permissions, cf. http://shiny.rstudio.com/gallery/generating-reports.html
+      temp_file = file.path(tempdir(), 'assignment_report_de.Rmd')
+      file.copy('templates/assignment_report_de.Rmd', temp_file, overwrite = TRUE)
+      # load map
+      map_path = 'data/berlin.rds'
+      if (file.exists(map_path)) {
+        berlin = read_rds(map_path)
+      } else {
+        berlin = ggmap::get_map('Berlin')
+        write_rds(berlin, map_path, compress = 'gz')
+      }
+      isolate(rmarkdown::render(
+        temp_file,
+        output_file = con,
+        envir = new.env(parent = globalenv()),  # isolate rendering
+        params = list(
+          map = berlin,
+          units = r$units,
+          entities = r$entities,
+          NO_ASSIGNMENT = NO_ASSIGNMENT,
+          colors = color_vec,
+          optimizable_units = optimizable_units,
+          weights = weights
+        )
+      ))
+    }
+  )
 }
 
 shinyApp(ui, server)

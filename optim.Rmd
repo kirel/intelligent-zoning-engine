@@ -5,6 +5,7 @@ output: html_notebook
 
 ```{r libs, include=F, warning=F}
 library(readr)
+library(readxl)
 library(rgdal)
 library(dplyr)
 library(tidyr)
@@ -14,6 +15,7 @@ library(purrr)
 library(knitr)
 library(broom)
 library(maptools)
+library(rgeos)
 ```
 
 Dieses Notebook bereitet die Daten für die Intelligent Zoning Engine vor. Es speichert
@@ -43,10 +45,10 @@ TODO:
 
 ```{r load data, message=FALSE, warning=FALSE}
 sampled_buildings = read_rds('output/sampled_buildings.rds')
-bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON')
-blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON')
-lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON')
-re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON')
+bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 ```
 
 ### Schulwege
@@ -112,7 +114,7 @@ ggmap(map) + geom_point(aes(lon, lat, color=missing.capa), data=data) +
 Filter auf Schulen mit Kapazitätsinformationen (für T-S sind das alle):
 
 ```{r}
-relevant_schools = re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK==bezirk & !is.na(`Plätze`)) %>% .$spatial_name
+relevant_schools = re_schulstand_df_w_kapas %>% filter(grepl('G', spatial_name)) %>% filter(BEZIRK==bezirk & !is.na(`Plätze`)) %>% .$spatial_name
 relevant_schools
 ```
 
@@ -150,12 +152,17 @@ TODO: Stattdessen mit https://github.com/berlinermorgenpost/cogran machen?
 
 ### Plot der 6-Jährigen nach `EWR201512E_Matrix.csv`
 
+Wir verwenden das mittel der 5- und 6-Jährigen.
+
 TODO neue Daten von Torres?
-TODO Mittel über mehrere Jahre verwenden? Prognose?
+TODO Prognose?
 
 ```{r}
-relevant_ewr = einwohner_lor %>% select(RAUMID, E_E06_07) %>% filter(RAUMID %in% relevant_lors$PLR) %>%
-  mutate(kids=as.numeric(gsub(',','.',E_E06_07))) %>% as.data.frame()
+relevant_ewr = einwohner_lor %>%
+  select(RAUMID, E_E05_06, E_E06_07) %>%
+  filter(RAUMID %in% relevant_lors$PLR) %>%
+  # Schnitt der 5 und 6-Jährigen
+  mutate(kids=(as.numeric(gsub(',','.',E_E06_07))+as.numeric(gsub(',','.',E_E05_06)))/2) %>% as.data.frame()
 
 data = tidy(lor[lor$BEZ == bez_id,], region='PLR') %>% inner_join(relevant_ewr, by=c('id'='RAUMID'))
 ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
@@ -172,10 +179,20 @@ ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=Einw), data=data)
 ```
 
 
-### Hochrrechnung auf Blöcke
+### Hochrrechnung auf Blöcke, Strukturquote
 
 ```{r}
-kids_in_blks = relevant_blks %>% group_by(PLR) %>% mutate(EinwRatio = Einw/sum(Einw)) %>% ungroup %>% left_join(relevant_ewr, by=c('PLR'='RAUMID')) %>% mutate(kids = EinwRatio*kids) %>% select(BEZ, PLR, BLK, Einw, kids) %>% as.data.frame()
+Strukturquote = 0.9
+
+kids_in_blks = relevant_blks %>%
+  group_by(PLR) %>%
+  mutate(EinwRatio = Einw/sum(Einw)) %>%
+  ungroup %>%
+  left_join(relevant_ewr, by=c('PLR'='RAUMID')) %>%
+  mutate(kids = EinwRatio*kids) %>%
+  mutate(kids = Strukturquote*kids) %>% # Strukturquote
+  select(BEZ, PLR, BLK, Einw, kids) %>%
+  as.data.frame()
 row.names(kids_in_blks) = kids_in_blks$BLK
 
 data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(kids_in_blks, by=c('id'='BLK')) %>% mutate(kids=ifelse(kids==0, NA, kids), Einw=ifelse(Einw==0, NA, Einw))
@@ -249,7 +266,99 @@ dim(travel_matrix)
 travel_matrix
 ```
 
-# Select relevant data
+## Sozioökonomische Daten
+
+Wir haben Sozioökonomische Daten in den Wahlbezirken. Strategie:
+- Schneiden der Wahlbezirke mit den Blöcken
+- Übernahme des Prozentwertes vom Wahlbezirk für jeden (Unter-)block
+- Zuordnung zu jedem Block und Vereinigung durch Flächen/Wohnhaus-gewichtetes Mittel des Prozentwertes 
+
+```{r}
+UWB = readOGR('download/RBS_OD_UWB_AGH2016.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+UWB$ID = paste0(UWB$BEZ, UWB$UWB)
+sozio_UWB = read_excel('download/DL_BE_AH2016_Strukturdaten.xlsx', sheet = 3) %>% select(ID, sgbIIu65=`Einwohner unter 65 in SGB II 2014 Prozent`)
+UWB = UWB %>% sp::merge(sozio_UWB, by='ID')
+
+ggplot(broom::tidy(UWB, region='ID') %>% inner_join(UWB %>% as.data.frame, by=c('id'='ID'))) + geom_polygon(aes(x=long, y=lat, group=group, fill=sgbIIu65)) + coord_map()
+```
+
+Check for self intersections
+```{r}
+wgs84 = CRS(proj4string(blk))
+ea_projection = CRS("+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
+blk_in_bez = blk[blk$BEZ == '07',]
+gIsValid(blk_in_bez)
+blk_in_bez = gBuffer(spTransform(blk_in_bez, ea_projection), byid=T, width = -0.1)
+any(xor(gIntersects(blk_in_bez, byid=T, returnDense = T), diag(1, length(blk_in_bez)) == 1))
+plot(blk_in_bez)
+#gIntersects(UWB[UWB$BEZ == '07',], byid=TRUE)
+```
+
+```{r}
+uwb_in_bez = gBuffer(spTransform(UWB[UWB$BEZ == '07',], ea_projection), byid=T, width=-0.1)
+gIsValid(uwb_in_bez)
+any(xor(gIntersects(uwb_in_bez, byid=T, returnDense = T), diag(1, length(uwb_in_bez)) == 1))
+plot(uwb_in_bez)
+```
+
+```{r}
+intersection = gIntersection(uwb_in_bez, blk_in_bez, byid = T, drop_lower_td = T)
+
+gIsValid(intersection)
+plot(intersection)
+```
+
+```{r}
+intersection_uwb_data = intersection %>% over(uwb_in_bez)
+intersection_blk_data = intersection %>% over(blk_in_bez)
+intersection_area = gArea(intersection, byid=T)
+intersection_data = cbind(
+    intersection_uwb_data %>% select(UWB_ID=ID, sgbIIu65),
+    intersection_blk_data %>% select(BLK, BLK_Einw=Einw),
+    data.frame(area=intersection_area) # FIXME how else to normalize?
+    )
+```
+
+```{r}
+length(intersection)
+nrow(blk_in_bez)
+# did we miss any blocks?
+setdiff(blk_in_bez$BLK, intersection_data$BLK)
+```
+
+Pro Block mische die SGB-Werte der Unterblöcke gewichtet nach Fläche.
+FIXME - besser nach Anzahl der Wohnhäuser?
+```{r}
+sgbII_blk = intersection_data %>%
+  group_by(BLK) %>%
+  summarise(sgbIIu65=sum(sgbIIu65*area)/sum(area)/100)
+```
+
+
+```{r}
+ggplot(broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK') %>% left_join(sgbII_blk, by=c('id'='BLK'))) + geom_polygon(aes(x=long, y=lat, group=group, fill=sgbIIu65)) + coord_map()
+```
+
+## Adjazenz von Blöcken
+
+```{r}
+adjacency = gIntersects(gBuffer(blk_in_bez, byid=T, width=40), byid = T)
+
+adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=row.names(.)) %>%
+  gather(to, connected, -from) %>% filter(connected) %>%
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=row.names(.))) %>%
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=row.names(.)))
+
+ggplot() +
+  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK')) + 
+  geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=adjacency_df) +
+  theme_nothing() + coord_map()
+
+ggsave('figs/adjacency.pdf')
+```
+
+
+## Select relevant data
 
 ```{r}
 optim_kapas = relevant_kapas
@@ -340,17 +449,62 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
 
 ### Neue Daten
 
-TODO
 
-### Alte Daten
+#### Entities / Schulen
 
 ```{r}
-write_rds(solution, 'app/data/init_solution.rds', 'gz')
-write_rds(subset(blk, BEZ == bez_id), 'app/data/blocks.rds', 'gz')
-write_rds(subset(re_schulstand_df, spatial_name %in% relevant_schools), 'app/data/schools.rds', 'gz')
-write_rds(subset(bez, BEZ == bez_id), 'app/data/bez.rds', 'gz')
+entities = subset(re_schulstand_df, spatial_name %in% relevant_schools) %>%
+  rename(entity_id = spatial_name) %>%
+  select(-gml_id, -spatial_alias, -spatial_type) %>%
+  inner_join(rename(relevant_kapas, capacity=Kapa), by=c('entity_id'='Schulnummer'))
+coordinates(entities) = ~ lon + lat
+proj4string(entities) = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+file.remove('app/data/entities.geojson')
+entities %>% writeOGR('app/data/entities.geojson', layer="entities", driver="GeoJSON", check_exists=F)
+entities@data %>% select(entity_id, capacity) %>% write_csv('app/data/entities.csv')
+```
 
-block_stats = optim_kids_in_blks %>% inner_join(travel_from_blks, by=c('BLK'='BLK')) %>% inner_join(relevant_kapas, by=c('dst'='Schulnummer')) %>% inner_join(re_schulstand_df, by=c('dst'='spatial_name'))
-write_rds(block_stats, 'app/data/block_stats.rds', 'gz')
+#### Units / Statistische Blöcke
+
+```{r}
+units = subset(blk, BEZ == bez_id)
+
+units@data$PLR = NULL
+units@data$Einw = NULL
+units@data$BEZ = NULL
+units@data$unit_id = units@data$BLK
+units@data$BLK = NULL
+
+units = units %>% sp::merge(
+  optim_kids_in_blks %>%
+    left_join(sgbII_blk) %>%
+    select(unit_id=BLK, population=kids, sgbIIu65)
+  )
+
+file.remove('app/data/units.geojson')
+units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
+units@data %>% write_csv('app/data/units.csv')
+```
+
+#### Zuordnung
+
+```{r}
+assignment = solution %>% select(unit_id=BLK, entity_id=school)
+assignment %>% write_csv('app/data/assignment.csv')
+```
+
+#### Weights / Schulwege
+
+```{r}
+travel_from_blks %>%
+  rename(unit_id=BLK, entity_id=dst) %>%
+  #gather(weight, value, -unit_id, -entity_id) %>%
+  write_csv('app/data/weights.csv')
+```
+
+#### Zusätzliche Daten
+
+```{r}
+file.copy('download/RBS_OD_BEZ_2015_12.geojson', 'app/data/RBS_OD_BEZ_2015_12.geojson')
 ```
 

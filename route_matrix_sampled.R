@@ -14,7 +14,7 @@ options(osrm.profile = "foot")
 #library(ggplot2)
 #library(broom)
 
-re_schulstand = readOGR('download/re_schulstand.geojson', 'OGRGeoJSON')
+re_schulstand = readOGR('download/re_schulstand.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
 re_schulstand_df = cbind(coordinates(re_schulstand), re_schulstand@data) %>%
   select(school_id=spatial_name, s_long=coords.x1, s_lat=coords.x2) %>%
   filter(grepl('G', school_id))

@@ -1,0 +1,121 @@
+---
+title: "Schule-Block-Zuordnung"
+author: "idalab GmbH"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output: pdf_document
+classoption: a4paper
+params:
+  map: ""
+  units: ""
+  entities: ""
+  weights: ""
+  colors: ""
+  NO_ASSIGNMENT: ""
+  optimizable_units: ""
+---
+
+```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
+```
+
+## Kartendarstellung der Einzugsbereiche
+
+```{r map, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.align='center', out.extra='keepaspectratio', fig.height=8}
+tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
+  dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
+  dplyr::select(id, entity_id, group, long, lat) %>%
+  dplyr::mutate(optim = id %in% params$optimizable_units)
+tmp_shown = tmp_units %>%
+  dplyr::filter(optim)
+tmp_unassigned = tmp_units %>%
+  dplyr::filter(!optim)
+tmp_entities <- as.data.frame(params$entities) %>%
+  dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
+
+ggmap::ggmap(params$map) +
+  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group, fill = entity_id),
+                        data = tmp_shown) +
+  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group),
+                        data = tmp_unassigned,
+                        fill = "black", alpha = 1/4) +
+  ggplot2::geom_point(mapping = aes(x = long, y = lat),
+                      data = tmp_entities,
+                      size = 1) +
+  ggrepel::geom_text_repel(mapping = aes(x = long, y = lat, label = entity_id),
+                     data = tmp_entities,
+                     size = 3) +
+  ggplot2::coord_map(xlim = params$units@bbox["x",] + c(-0.01, 0.01),
+                     ylim = params$units@bbox["y",] + c(-0.01, 0.01)) +
+  ggplot2::scale_fill_manual(values = params$colors) +
+  ggplot2::theme(
+    axis.line=element_blank(),
+    axis.text.x=element_blank(),
+    axis.text.y=element_blank(),
+    axis.ticks=element_blank(),
+    axis.title.x=element_blank(),
+    axis.title.y=element_blank(),
+    legend.position="none"
+  )
+```
+
+## Statistik zu den Einzugsbereichen
+
+```{r entity_stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+data = params$units %>%
+  as.data.frame() %>%
+  dplyr::filter(entity_id != params$NO_ASSIGNMENT)
+
+table_data = data %>%
+  dplyr::left_join(params$weights, by=c('unit_id', 'entity_id')) %>%
+  dplyr::group_by(entity_id) %>%
+  dplyr::summarise(
+    num_units = n(),
+    pop = sum(population, na.rm = TRUE),
+    sgbIIu65 = sum(population * sgbIIu65, na.rm = TRUE) / pop,
+    avg_dist = sum(population * avg, na.rm = TRUE) / pop,
+    max_dist = max(max, na.rm = TRUE)
+  ) %>%
+  dplyr::left_join(params$entities %>%
+                     as.data.frame() %>%
+                     dplyr::select(entity_id, capacity),
+                   by = 'entity_id') %>%
+  dplyr::mutate(utilization = pop / capacity)
+```
+
+```{r stats, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+header <- c("Schule",
+            "Kapazität",
+            "Kinder",
+            "Auslastung",
+            "SGBII(u.65)",
+            "Weg (Ø)",
+            "Weg (max)")
+table_data %>%
+  dplyr::select(entity_id, capacity, pop, utilization,
+                sgbIIu65, avg_dist, max_dist) %>%
+  dplyr::mutate(sgbIIu65 = percent(sgbIIu65),
+                utilization = percent(utilization)) %>%
+  knitr::kable(digits = 2, col.names = header)
+```
+
+```{r pretty_table, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+```
+
+## Schulen-Blöcke-Zuordnung
+
+```{r solution, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+entity_units <- params$units %>%
+  as.data.frame() %>%
+  dplyr::select(entity_id, unit_id) %>%
+  dplyr::group_by(entity_id) %>%
+  dplyr::summarise(unit_ids = paste(unit_id, sep = "", collapse = ", ")) %>%
+  dplyr::mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT,
+                                   'Keine Zuordnung', entity_id))
+
+for (i in 1:nrow(entity_units)) {
+  cat("**", entity_units[[i, "entity_id"]], ":**\n", sep = "")
+  cat(entity_units[[i, "unit_ids"]], "\n\n", sep = "")
+}
+```

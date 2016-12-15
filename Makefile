@@ -79,7 +79,21 @@ download/anmeldezahlen.csv:
 	wget https://docs.google.com/spreadsheet/ccc\?key\=1iAGbTdYcC55A6sDXpOnD3y-s8b4b6wJdSS-GkW_iIr0\&output\=csv -O $@
 anmeldezahlen: download/anmeldezahlen.csv
 
-download: schulen adressen einzugsbereiche LOR flaechen RBS einwohner anmeldezahlen
+# https://www.wahlen-berlin.de/Wahlen/Be2016/DL_BE_AH2016_Strukturdaten.xlsx
+download/DL_BE_AH2016_Strukturdaten.xlsx:
+	wget --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36" https://www.wahlen-berlin.de/Wahlen/Be2016/DL_BE_AH2016_Strukturdaten.xlsx -O $@
+
+# https://www.wahlen-berlin.de/wahlen/BE2016/Wahlkreiseinteil/wahlkreiseinteil.asp?sel1=1253&sel2=1045
+download/RBS_OD_UWB_AGH2016.geojson:
+	wget  --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36" https://www.wahlen-berlin.de/Wahlen/Be2016/Wahlkreiseinteil/RBS_OD_UWB_AGH2016.zip?sel1=1253\&sel2=1045 -O RBS_OD_UWB_AGH2016.zip
+	unzip -o -d download/RBS_OD_UWB_AGH2016 download/RBS_OD_UWB_AGH2016.zip
+	rm download/RBS_OD_UWB_AGH2016.zip
+	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ download/RBS_OD_UWB_AGH2016/UWB.shp
+	rm -rf download/RBS_OD_UWB_AGH2016
+
+sozio: download/DL_BE_AH2016_Strukturdaten.xlsx download/RBS_OD_UWB_AGH2016.geojson
+
+download: schulen adressen einzugsbereiche LOR flaechen RBS einwohner anmeldezahlen sozio
 
 
 # *** Process data
