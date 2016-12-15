@@ -1,0 +1,135 @@
+---
+title: "GeoJSON Export von Einzugsbereichen"
+author: "idalab GmbH"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output: html_notebook
+---
+
+## Abhängigkeiten
+
+```{r libs}
+library(readr)
+library(rgdal)
+library(dplyr)
+library(ggmap)
+library(ggplot2)
+library(rgeos)
+```
+
+```{r globals}
+data_path = file.path("app", "data")
+NONE_SELECTED = '__NONE_SELECTED__'
+NO_ASSIGNMENT = NONE_SELECTED
+```
+
+## Daten Vorbereiten
+
+```{r data}
+units = rgdal::readOGR(file.path(data_path, 'units.geojson'),
+                layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+entities = rgdal::readOGR(file.path(data_path, 'entities.geojson'),
+                          layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+weights = readr::read_csv(file.path(data_path, 'weights.csv'))
+
+assign_path = file.path(data_path, 'assignment.csv')
+# assign_path = '/home/moritz/Downloads/assignment_2016-12-13.csv'
+
+assignment = units@data %>%
+  dplyr::select(unit_id) %>%
+  dplyr::left_join(read_csv(assign_path), by = "unit_id") %>%
+  dplyr::mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id)) # FIXME necessary?
+
+units = units %>% sp::merge(assignment)
+optimizable_units = units %>%
+  as.data.frame() %>%
+  dplyr::inner_join(weights, by='unit_id') %>%
+  .$unit_id %>%
+  unique()
+```
+
+```{r colors}
+colors = RColorBrewer::brewer.pal(8, 'Set1') # show_col(brewer.pal(9,'Set1'))
+valid_colors = colors[2:8]
+warning_color =  colors[1]
+entity_ids_color = c(
+  "07G16", "07G02", "07G01", "07G21", "07G14", "07G07", "07G15", "07G03", "07G13", "07G12", "07G10", "07G17", "07G06", "07G18",
+  "07G19", "07G24", "07G05", "07G22", "07G23", "07G25", "07G20", "07G36", "07G27", "07G37", "07G35", "07G30", "07G28", "07G32",
+  "07G29", "07G34", "07G26", "07G31"
+)
+color_vec = rep(valid_colors, length(entity_ids_color) / length(valid_colors)+1)[1:length(entity_ids_color)]
+color_vec = c(color_vec, warning_color)
+names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
+```
+```{r map}
+map_path = file.path(data_path, 'berlin.rds')
+if (file.exists(map_path)) {
+  berlin = readr::read_rds(map_path)
+} else {
+  berlin = ggmap::get_map('Berlin', zoom = 10, maptype = "roadmap", language = "de")
+  readr::write_rds(berlin, map_path, compress = 'gz')
+}
+```
+
+```{r tiny-units}
+tmp_units = broom::tidy(units, region = 'unit_id') %>%
+  dplyr::inner_join(units@data, by = c("id" = "unit_id")) %>%
+  dplyr::select(id, entity_id, group, long, lat) %>%
+  dplyr::mutate(optim = id %in% optimizable_units)
+
+ggplot2::ggplot(tmp_units) +
+  ggplot2::geom_path(ggplot2::aes(x = long, y = lat, group = group)) +
+  ggplot2::coord_map(xlim = units@bbox["x",] + c(-0.01, 0.01),
+                     ylim = units@bbox["y",] + c(-0.01, 0.01)) +
+  ggmap::theme_nothing()
+```
+```{r}
+prev_projection = sp::CRS(sp::proj4string(units))
+ea_projection = sp::CRS("+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
+ea_units = sp::spTransform(units, ea_projection)
+```
+
+```{r}
+tmp = rgeos::gBuffer(ea_units, byid = TRUE, width = 40,
+                     capStyle = "FLAT", joinStyle = "BEVEL") %>%
+  # rgeos::gIntersection(ea_units, byid = TRUE, checkValidity = TRUE) %>%
+  rgeos::gUnaryUnion(id = .$entity_id) %>%
+  rgeos::gBuffer(byid = TRUE, width = -40,
+                     capStyle = "FLAT", joinStyle = "BEVEL") %>%
+  sp::spTransform(prev_projection)
+
+tmp_units = broom::tidy(tmp, region = 'unit_id') %>%
+  dplyr::select(id, group, long, lat)
+
+ggplot2::ggplot(tmp_units) +
+  ggplot2::geom_path(ggplot2::aes(x = long, y = lat, group = group)) +
+  ggplot2::coord_map() +
+  ggmap::theme_nothing()
+```
+
+```{r}
+table_data = units %>%
+  as.data.frame() %>%
+  dplyr::left_join(weights, by=c('unit_id', 'entity_id')) %>%
+  dplyr::group_by(entity_id) %>%
+  dplyr::summarise(
+    num_units = n(),
+    pop = sum(population, na.rm = TRUE),
+    sgbIIu65 = sum(population * sgbIIu65, na.rm = TRUE) / pop,
+    avg_dist = sum(population * avg, na.rm = TRUE) / pop,
+    max_dist = max(max, na.rm = TRUE)
+  ) %>%
+  dplyr::left_join(entities %>%
+                     as.data.frame() %>%
+                     dplyr::select(entity_id, capacity),
+                   by = 'entity_id') %>%
+  dplyr::mutate(utilization = pop / capacity) %>%
+  as.data.frame()
+row.names(table_data) = table_data$entity_id
+
+tmp_df = tmp %>% sp::SpatialPolygonsDataFrame(table_data)
+
+rgdal::writeOGR(tmp_df, file.path(data_path, 'assignment.geojson'),
+                  layer="entities", driver="GeoJSON",
+                  verbose = TRUE, check_exists = FALSE)
+```
+
