@@ -34,30 +34,22 @@ tmp_unassigned = tmp_units %>%
 tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
-ggmap::ggmap(params$map) +
-  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group, fill = entity_id),
+ggmap::ggmap(params$map, extent = "device", legend = "none") +
+  ggplot2::geom_polygon(mapping = ggplot2::aes(x = long, y = lat, group = group, fill = entity_id),
                         data = tmp_shown) +
-  ggplot2::geom_polygon(mapping = aes(x = long, y = lat, group = group),
+  ggplot2::geom_polygon(mapping = ggplot2::aes(x = long, y = lat, group = group),
                         data = tmp_unassigned,
                         fill = "black", alpha = 1/4) +
-  ggplot2::geom_point(mapping = aes(x = long, y = lat),
+  ggplot2::geom_point(mapping = ggplot2::aes(x = long, y = lat),
                       data = tmp_entities,
                       size = 1) +
-  ggrepel::geom_text_repel(mapping = aes(x = long, y = lat, label = entity_id),
+  ggrepel::geom_text_repel(mapping = ggplot2::aes(x = long, y = lat, label = entity_id),
                      data = tmp_entities,
                      size = 3) +
   ggplot2::coord_map(xlim = params$units@bbox["x",] + c(-0.01, 0.01),
                      ylim = params$units@bbox["y",] + c(-0.01, 0.01)) +
   ggplot2::scale_fill_manual(values = params$colors) +
-  ggplot2::theme(
-    axis.line=element_blank(),
-    axis.text.x=element_blank(),
-    axis.text.y=element_blank(),
-    axis.ticks=element_blank(),
-    axis.title.x=element_blank(),
-    axis.title.y=element_blank(),
-    legend.position="none"
-  )
+  ggplot2::theme(legend.position = "none")
 ```
 
 ## Statistik zu den Einzugsbereichen
