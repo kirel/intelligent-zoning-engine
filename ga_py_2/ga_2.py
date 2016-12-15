@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
 
-from read_meta_data_2 import read_weights
+from read_meta_data_2 import read_data
 
-units, entities, weights = read_weights('../data (2)/weights.csv', 'max')
+units, entities, weights, capacity, units_population = read_data('../app-data', 'max')
 
 
 def clone_population(population):
@@ -12,6 +12,7 @@ def clone_population(population):
         new_population.append(np.copy(individual))
 
     return new_population
+
 
 def initialize_individual(num_entities, num_units):
     """
@@ -42,7 +43,24 @@ def fitness(assignment):
     Returns: the fitness of the individual (represented by A)
 
     """
-    return np.sum(np.multiply(assignment, weights))
+
+    OVER_CAPACITY_PENALTY = 1
+    UNDER_CAPACITY_PENALTY = 1
+
+    DIST_WEIGHT = 1 / 2000 ** 2
+    OVER_CAPACITY_WEIGHT = 1 / 200
+    UNDER_CAPACITY_WEIGHT = 1 / 200
+
+    assignment_population = np.dot(assignment.T, units_population)
+    assign_capacity_diff = capacity - assignment_population
+
+    over_cap_vec = (assign_capacity_diff * (assign_capacity_diff > 0) * OVER_CAPACITY_PENALTY) ** 2
+    under_cap_vec = (assign_capacity_diff * (assign_capacity_diff < 0) * UNDER_CAPACITY_PENALTY) ** 2
+
+    distance_val = np.sum(np.multiply(assignment, weights) ** 2)
+
+    return distance_val * DIST_WEIGHT + np.sum(over_cap_vec) * OVER_CAPACITY_WEIGHT + \
+           np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT
 
 
 def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent):
@@ -52,20 +70,17 @@ def mutation(population, sampled_population_ind, mutation_frac, hueristic_expone
     num_mutations = int(mutation_frac * num_units)
 
     for ind in sampled_population_ind:
-        # FixMe
         fitness_vals_normed = np.multiply(population[ind], weights).sum(axis=1) / np.max(weights)
         exploration_fitness_vals = fitness_vals_normed ** hueristic_exponent
         mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
 
         # chose which rows to mutate based on the mutation probability
-        # import ipdb; ipdb.set_trace()
 
         mutated_units = np.random.choice(np.arange(num_units), num_mutations, False, mutation_prob)
         new_entities = np.random.randint(0, num_entities, len(mutated_units))
         population[ind][mutated_units, :] = 0.
         population[ind][mutated_units, new_entities] = 1.
 
-    # import ipdb; ipdb.set_trace()
     return [population[ind] for ind in sampled_population_ind]
 
 
@@ -74,7 +89,7 @@ def crossover(ind_a, ind_b):
     num_diffs = np.sum(diffs)
 
     if num_diffs == 0:
-        #print('a')
+        # print('a')
         return []
 
     child_a = np.copy(ind_a)
@@ -100,12 +115,13 @@ def get_prob_from_fitness(population):
 
 
 def breed(population, hueristic_exponent, mutation_frac, num_mutants=100, num_pairs=50):
-    #import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     # calculate probability to chose each individual in the population
     probs = get_prob_from_fitness(population)
 
     sampled_population_ind = np.random.choice(np.arange(len(population)), num_mutants, True, probs)
-    mutated_population = mutation(clone_population(population), sampled_population_ind, mutation_frac, hueristic_exponent)
+    mutated_population = mutation(clone_population(population), sampled_population_ind, mutation_frac,
+                                  hueristic_exponent)
 
     mating_population = clone_population(population) + clone_population(mutated_population)
     probs_mating = get_prob_from_fitness(mating_population)
@@ -180,7 +196,7 @@ if __name__ == '__main__':
         pop = new_pop[:]
         num_steps += 1
 
-    #import ipdb;
+    # import ipdb;
 
     ipdb.set_trace()
     # return res
