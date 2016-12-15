@@ -18,6 +18,7 @@ NO_ASSIGNMENT = NONE_SELECTED
 units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 weights = read_csv('data/weights.csv')
+adjacency = read_csv('data/adjacency.csv', col_types ='cc')
 
 assignment = units@data %>%
   select(unit_id) %>%
@@ -549,6 +550,15 @@ server <- function(input, output, session) {
     DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
     OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
     UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
+    
+    # TODO coherence cost as number of connected components
+    filtered_edges = adjacency %>%
+      inner_join(individual, by=c('from'='unit_id'), copy = T) %>%
+      inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
+      filter(entity_id == to_entity_id)
+    
+    coherence_cost = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))/length(entity_ids)
+    
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
@@ -580,10 +590,11 @@ server <- function(input, output, session) {
           flog.debug('Max distance error: %s', x$max, name='optimization')
           flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
           flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
+          flog.debug('Coherence cost: %s', coherence_cost, name='optimization')
         }
         x
       }) %>%
-      mutate(fitness = max + over_capacity_penalty + under_capacity_penalty) %>% .$fitness
+      mutate(fitness = avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
   }
 
   mem_fitness_f = memoise(fitness_f)
