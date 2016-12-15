@@ -554,7 +554,7 @@ server <- function(input, output, session) {
       group_by(entity_id) %>%
       summarise(
         avg=sum(avg*population)/sum(population), # population weighted mean
-        max=sum(max*population)/sum(population), # population weighted max # TODO remove?
+        max=max(max), # per catchment area look at maximum distance
         population=sum(population)
         ) %>%
       inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
@@ -562,7 +562,7 @@ server <- function(input, output, session) {
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(
         avg=mean(avg^2), # squared average distance
-        max=mean(max^2), # squared average distance
+        max=mean(max^2), # squared average maximum distance
         over_capacity_penalty=mean(over_capacity_penalty),
         under_capacity_penalty=mean(under_capacity_penalty)
         ) %>%
