@@ -641,7 +641,7 @@ server <- function(input, output, session) {
         Kapazität=capacity,
         Kinder=pop,
         Auslastung=utilization,
-        `ΔAusl.`=delta_utilization,
+        #`ΔAusl.`=delta_utilization,
         `SGBII(u.65)`=sgbIIu65,
         #`Weg (min)`=min_dist,
         `Weg (Ø)`=avg_dist,
@@ -655,12 +655,16 @@ server <- function(input, output, session) {
 
   rowCallback = DT::JS("function(row, data) {",
 "
-  if (data[4]+data[5] > 1) {
-    $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+  // if (data[4]+data[5] > 1) {
+  if (data[4] > 1.1) {
+    // $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+    $('td:eq(4)', row).addClass('capacity-panic').removeClass('capacity-ok');
   } else {
-    $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
+    // $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
+    $('td:eq(4)', row).addClass('capacity-ok').removeClass('capacity-panic');
   }
 
+/*
   if (data[5] > 0) {
     $('td:eq(5)', row).addClass('change-up').removeClass('change-down').removeClass('no-change');
   } else if (data[5] < 0) {
@@ -668,9 +672,10 @@ server <- function(input, output, session) {
   } else {
     $('td:eq(5)', row).addClass('no-change').removeClass('change-down').removeClass('change-up');
   }
+*/
 
   $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')
-  $('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
+  //$('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
 ",
   "}")
 
@@ -680,7 +685,8 @@ server <- function(input, output, session) {
         options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
-      formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
+      #formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
+      formatPercentage(c('Auslastung', 'SGBII(u.65)'), digits = 2) %>%
       formatRound(c(
         'Kinder',
         #'Weg (min)',
