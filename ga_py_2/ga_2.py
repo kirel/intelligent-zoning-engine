@@ -42,19 +42,18 @@ def fitness(assignment):
     Returns: the fitness of the individual (represented by A)
 
     """
-    return np.multiply(assignment, weights)
+    return np.sum(np.multiply(assignment, weights))
 
 
-def mutation(pop, sampled_population_ind, mutation_frac, hueristic_exponent):
+def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent):
     if mutation_frac == 0:
-        return pop
-    mutated_pop = pop[:]
-    num_units, num_entities = mutated_pop[0].shape
+        return population
+    num_units, num_entities = population[0].shape
     num_mutations = int(mutation_frac * num_units)
 
     for ind in sampled_population_ind:
         # FixMe
-        fitness_vals_normed = fitness(mutated_pop[ind]).sum(axis=1) / np.max(weights)
+        fitness_vals_normed = np.multiply(population[ind], weights).sum(axis=1) / np.max(weights)
         exploration_fitness_vals = fitness_vals_normed ** hueristic_exponent
         mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
 
@@ -63,11 +62,11 @@ def mutation(pop, sampled_population_ind, mutation_frac, hueristic_exponent):
 
         mutated_units = np.random.choice(np.arange(num_units), num_mutations, False, mutation_prob)
         new_entities = np.random.randint(0, num_entities, len(mutated_units))
-        mutated_pop[ind][mutated_units, :] = 0.
-        mutated_pop[ind][mutated_units, new_entities] = 1.
+        population[ind][mutated_units, :] = 0.
+        population[ind][mutated_units, new_entities] = 1.
 
     # import ipdb; ipdb.set_trace()
-    return [mutated_pop[ind] for ind in sampled_population_ind]
+    return [population[ind] for ind in sampled_population_ind]
 
 
 def crossover(ind_a, ind_b):
@@ -93,7 +92,7 @@ def crossover(ind_a, ind_b):
 
 
 def get_prob_from_fitness(population):
-    fitness_vals = np.array([np.sum(fitness(population[ind])) for ind in range(len(population))])
+    fitness_vals = np.array([fitness(population[ind]) for ind in range(len(population))])
     fitness_vals = -1. * fitness_vals + min(fitness_vals) + max(fitness_vals)
     probs = fitness_vals / sum(fitness_vals)
 
@@ -121,13 +120,13 @@ def breed(population, hueristic_exponent, mutation_frac, num_mutants=100, num_pa
             mated.append(mating_res[1])
 
     del mating_population
-    
+
     return population[:] + mutated_population[:] + mated[:]
 
 
 def select(population, survival_fraction=1., max_population=50):
     # print(len(population))
-    sorted_population = sorted(population, key=lambda x: np.sum(fitness(x)))
+    sorted_population = sorted(population, key=fitness)
     num_survivors = min(int(len(population) * survival_fraction), max_population)
     survivors = sorted_population[:num_survivors]
     return survivors
@@ -175,9 +174,9 @@ if __name__ == '__main__':
     num_steps = 1
     for i in range(50):
         new_pop = optimization_step(pop[:], num_steps)
-        # print([np.sum(fitness(sol)) for sol in new_pop])
+
         best_solution = new_pop[0]
-        fitness_res.append(np.sum(fitness(best_solution)))
+        fitness_res.append(fitness(best_solution))
         pop = new_pop[:]
         num_steps += 1
 
