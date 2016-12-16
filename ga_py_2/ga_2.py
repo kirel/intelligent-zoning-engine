@@ -28,7 +28,16 @@ def clone_population(population):
 
     return new_population
 
+
 def initialize_population(population_size):
+    """
+
+    Args:
+        population_size: number of individuals in the population
+
+    Returns:
+
+    """
     num_entities = len(entities)
     num_units = len(units)
     population = []
@@ -241,6 +250,3 @@ def optimization_step(population, num_steps):
     survivors = select(new_population)
 
     return survivors
-
-
-

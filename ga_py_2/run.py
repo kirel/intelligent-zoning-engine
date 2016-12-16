@@ -8,6 +8,7 @@ from handle_db import get_instruction, set_assignment, get_current_assignment
 
 
 def write_results(best_solution, entities, units):
+
     """This function matches between entities and units ids based on
     the asignment matrix and writes it to the data base.
 
@@ -44,12 +45,12 @@ def run():
         optimize = get_instruction("'optimize'")[0][1]
 
         if optimize:
-            print('begin')
+            # print('begin')
             init_population = initialize_population(population_size)
             include_current_assign = get_instruction("'include_current'")[0][1]
 
             if include_current_assign:
-                print('getting current')
+                # print('getting current')
                 init_population.append(get_current_assignment())
 
             num_steps = 1
