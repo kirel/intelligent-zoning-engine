@@ -26,8 +26,8 @@ def create_db():
 
     set_assignment(init_assignment)
 
-    c.execute("CREATE TABLE {tn} ({nf} {ft} PRIMARY KEY)" \
-              .format(tn=instructions_table_name, nf=instruction_id_column, ft='TEXT'))
+    c.execute("CREATE TABLE {tn} ({nf} {ft} PRIMARY KEY)".
+              format(tn=instructions_table_name, nf=instruction_id_column, ft='TEXT'))
     c.execute("ALTER TABLE {tn} ADD COLUMN '{cn}' {ct}".
               format(tn=instructions_table_name, cn=instruction_column, ct='INTEGER'))
     c.execute("INSERT INTO {tn} ({idf}, {cn}) VALUES ('optimize', 0)".
