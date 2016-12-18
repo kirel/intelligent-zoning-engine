@@ -12,6 +12,7 @@ suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(knitr))
 suppressPackageStartupMessages(library(rmarkdown))
+suppressPackageStartupMessages(library(xtable))
 
 # Globals -----------------------------------------------------------------
 
@@ -69,7 +70,7 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 # Render Report -----------------------------------------------------------
 
 rmarkdown::render(
-  file.path("app", "templates", "assignment_report_de.Rmd"),
+  file.path("app", "templates", "table.Rmd"),
   params = list(
     map = berlin,
     units = units,
@@ -78,5 +79,7 @@ rmarkdown::render(
     colors = color_vec,
     optimizable_units = optimizable_units,
     weights = weights
-  )
+  ),
+  envir = new.env(), clean = FALSE,
+  output_options = list(keep_tex = TRUE, latex_engine = "xelatex")
 )
