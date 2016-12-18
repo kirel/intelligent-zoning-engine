@@ -60,6 +60,7 @@ color_vec = rep(valid_colors, length(entity_ids_color) / length(valid_colors)+1)
 color_vec = c(color_vec, warning_color)
 names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 ```
+
 ```{r map}
 map_path = file.path(data_path, 'berlin.rds')
 if (file.exists(map_path)) {
@@ -122,11 +123,15 @@ table_data = units %>%
                      as.data.frame() %>%
                      dplyr::select(entity_id, capacity),
                    by = 'entity_id') %>%
+  dplyr::left_join(data_frame(entity_id = names(color_vec),
+                              fill = color_vec), by = "entity_id") %>%
   dplyr::mutate(utilization = pop / capacity) %>%
+  # dplyr::filter(entity_id != NO_ASSIGNMENT) %>%
   as.data.frame()
 row.names(table_data) = table_data$entity_id
 
-tmp_df = tmp %>% sp::SpatialPolygonsDataFrame(table_data)
+tmp_df = sp::SpatialPolygonsDataFrame(tmp, table_data %>%
+  select(entity_id))
 
 rgdal::writeOGR(tmp_df, file.path(data_path, 'assignment.geojson'),
                   layer="entities", driver="GeoJSON",
