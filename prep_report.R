@@ -80,6 +80,5 @@ rmarkdown::render(
     optimizable_units = optimizable_units,
     weights = weights
   ),
-  envir = new.env(), clean = FALSE,
-  output_options = list(keep_tex = TRUE, latex_engine = "xelatex")
+  envir = new.env(), clean = TRUE
 )

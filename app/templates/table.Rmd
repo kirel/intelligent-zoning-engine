@@ -8,6 +8,8 @@ header-includes:
   - \usepackage{booktabs}
   - \usepackage{siunitx}
   - \usepackage{xcolor}
+  - \definecolor{BrewerGreen}{HTML}{4DAF4A}
+  - \definecolor{BrewerRed}{HTML}{E41A1C}
 classoption: a4paper
 params:
   map: ""
@@ -75,29 +77,39 @@ format_color = function(x, color) {
     x
 }
 
+format_box = function(x, color, max) {
+  output = knitr::opts_knit$get("rmarkdown.pandoc.to")
+  if (output == 'latex')
+    paste0("\\colorbox{", color, "!", round(x / max * 100),
+           "}{", round(x, digits = 1), "}")
+  else
+    x
+}
+
 tex_percent <- function(x, digits = 2, format = "f", ...) {
   paste0(formatC(100 * x, format = format, digits = digits, ...), "\\%")
 }
 ```
 
 ```{r table-xtable, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, results='asis'}
+max_avg = max(table_data$avg_dist, na.rm = TRUE)
+max_max = max(table_data$max_dist, na.rm = TRUE)
 tmp_tbl = table_data %>%
   dplyr::mutate(sgbIIu65 = tex_percent(sgbIIu65, digits = 1),
                 utilization = ifelse(
                   utilization <= 1,
-                  format_color(tex_percent(utilization, digits = 1), "green"),
-                  format_color(tex_percent(utilization, digits = 1), "red")))
+                  format_color(tex_percent(utilization, digits = 1), "BrewerGreen"),
+                  format_color(tex_percent(utilization, digits = 1), "BrewerRed")),
+                avg_dist = format_box(avg_dist, "blue", max_avg),
+                max_dist = format_box(max_dist, "blue", max_max))
 colnames(tmp_tbl) = header
-print(xtable::xtable(tmp_tbl, caption = 'xtable', digits = 1),
+print(xtable::xtable(tmp_tbl, caption = 'xtable', digits = 1,
+                     align = c("l", "l", rep("r", times = 6))),
       booktabs = TRUE, include.rownames = FALSE, comment = FALSE,
-      caption.placement = "top", sanitize.text.function = function(x) {x})
+      caption.placement = "top", sanitize.text.function = identity)
 ```
 
 ```{r table-pander}
-
-```
-
-```{r table-sparkTable}
 
 ```
 
