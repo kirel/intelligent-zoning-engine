@@ -130,10 +130,14 @@ table_data = units %>%
   as.data.frame()
 row.names(table_data) = table_data$entity_id
 
-tmp_df = sp::SpatialPolygonsDataFrame(tmp, table_data %>%
-  select(entity_id))
+tmp_df = sp::SpatialPolygonsDataFrame(tmp[table_data$entity_id],
+                                      table_data %>%
+                                        dplyr::select(entity_id, fill))
 
-rgdal::writeOGR(tmp_df, file.path(data_path, 'assignment.geojson'),
+# Need to delete existing file to prevent errors.
+filename = file.path(data_path, 'assignment.geojson')
+file.remove(filename)
+rgdal::writeOGR(tmp_df, filename,
                   layer="entities", driver="GeoJSON",
                   verbose = TRUE, check_exists = FALSE)
 ```
