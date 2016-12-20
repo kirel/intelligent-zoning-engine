@@ -11,3 +11,41 @@
 #svg-patterns { position: absolute; }
 .unlocked { fill: transparent; }
 .locked { fill: url(#locked-pattern); }
+
+#tabs {
+  margin-top: 2px;
+}
+
+.tab-pane {
+  padding: 2px;
+}
+
+#selected_units {
+  width: 80%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#detail--units, #detail--entity {
+    position: relative;
+    margin: 0 5px;
+}
+
+#detail--units--selected-units {
+  margin-top: 10px;
+}
+
+#detail--units #deselect_units, #detail--entity #deselect_entity {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0;
+    border: 0;
+    font-size: 1.2em;
+    margin: 0 2px;
+}
+
+#detail--units--controls, #detail--entity--controls {
+    margin: 5px 0;
+}

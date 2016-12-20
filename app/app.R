@@ -118,21 +118,25 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
-      tabsetPanel(type="tabs",
+      tabsetPanel(type="tabs", id="tabs",
                   tabPanel("Details", div(id='detail',
                       fillRow(
                         div(id='detail--units',
-                            p(uiOutput('selected_units')),
-                            actionButton('deselect_units', 'Auswahl aufheben'),
-                            actionButton('assign_units', 'Zuordnen'),
-                            actionButton('deassign_units', 'Löschen'),
-                            actionButton('lock_units', 'Verriegeln'),
-                            actionButton('unlock_units', 'Entriegeln'),
+                            div(id='detail--units--selected-units', uiOutput('selected_units')),
+                            div(id='detail--units--controls',
+                                actionButton('deselect_units', '', icon=icon('remove')),
+                                actionButton('assign_units', '', icon=icon('link')),
+                                actionButton('deassign_units', '', icon=icon('unlink')),
+                                actionButton('lock_units', '', icon=icon('lock')),
+                                actionButton('unlock_units', '', icon=icon('unlock'))
+                            ),
                             tableOutput('selected_units_table')
                         ),
                         div(id='detail--entity',
                             h4(textOutput('selected_entity')),
-                            actionButton('deselect_entity', 'Auswahl aufheben'),
+                            div(id='detail--units--controls',
+                                actionButton('deselect_entity', '', icon=icon('remove'))
+                            ),
                             tableOutput('selected_entity_table')
                         )
                       )
@@ -787,7 +791,12 @@ server <- function(input, output, session) {
   ### optimization
 
   output$optimize_button = renderUI({
-    actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
+    if (r$running_optimization) {
+      actionButton('optimize', label = 'Optimierung stoppen', icon = icon('stop'))
+    } else {
+      actionButton('optimize', label = 'Optimierung starten', icon = icon('play'))
+    }
+    
   })
   
   ### Export
