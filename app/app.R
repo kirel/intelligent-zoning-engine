@@ -481,12 +481,12 @@ server <- function(input, output, session) {
           r$ga_population_future = future({
             ga_select(
               ga_breed(r$ga_population,
-                       ga_mutate=mutation_f,
+                       ga_mutate=mutation_f_border,
                        ga_crossover=crossover_f,
                        fitness_f=mem_fitness_f,
                        mutation_fraction=mutation_fraction,
-                       num_pairs = 50,
-                       num_mutants = 50,
+                       num_pairs = 5,
+                       num_mutants = 5,
                        heuristic_exponent = heuristic_exponent),
               mem_fitness_f,
               max_population = 50)
@@ -527,6 +527,28 @@ server <- function(input, output, session) {
     individual[mutation_idx, 'entity_id'] = unlist(mutations)
     individual
   }
+  
+  # reassign only on the borders
+  mutation_f_border = function(individual, fraction=0.05, heuristic_exponent=3) {
+    if (fraction == 0) return(individual)
+    
+    # for each border_unit sample from the neighbourhood
+    new_individual = individual %>%
+      left_join(adjacency, by=c('unit_id'='from')) %>%
+      left_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
+      group_by(unit_id) %>%
+      summarise(entity_id=ifelse(
+        length(setdiff(to_entity_id, NA)) > 1 & rbinom(1, 1, fraction), # border unit?
+        sample(setdiff(to_entity_id, c(entity_id, NA)), 1), # border unit
+        first(entity_id) # non-border-unit
+        ),
+        my_from=do.call(paste, as.list(entity_id)),
+        my_to=do.call(paste, as.list(to_entity_id))
+        )
+    
+    new_individual
+  }
+  
 
   # randomly mix assignments from two individuals into two new ones
   # TODO only where they are different
