@@ -122,7 +122,7 @@ ui <- fillPage(
                   tabPanel("Details", div(id='detail',
                       fillRow(
                         div(id='detail--units',
-                            div(id='detail--units--selected-units', uiOutput('selected_units')),
+                            h4(id='detail--units--selected-units', uiOutput('selected_units')),
                             div(id='detail--units--controls',
                                 actionButton('deselect_units', '', icon=icon('remove')),
                                 actionButton('assign_units', '', icon=icon('link')),
@@ -784,6 +784,7 @@ server <- function(input, output, session) {
     if (sum(r$units$selected) > 0) {
       selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
         summarise(
+          Anzahl=n(),
           Kinder=formatC(sum(population, na.rm=T), digits=2, format='f'),
           `SGBII(u.65)`=percent(sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T))
         )
