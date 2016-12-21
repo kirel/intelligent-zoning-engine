@@ -70,7 +70,7 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 # Render Report -----------------------------------------------------------
 
 rmarkdown::render(
-  file.path("app", "templates", "table.Rmd"),
+  file.path("app", "templates", "assignment_report_de.Rmd"),
   params = list(
     map = berlin,
     units = units,
