@@ -12,6 +12,7 @@ suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(knitr))
 suppressPackageStartupMessages(library(rmarkdown))
+suppressPackageStartupMessages(library(xtable))
 
 # Globals -----------------------------------------------------------------
 
@@ -78,5 +79,6 @@ rmarkdown::render(
     colors = color_vec,
     optimizable_units = optimizable_units,
     weights = weights
-  )
+  ),
+  envir = new.env(), clean = TRUE
 )
