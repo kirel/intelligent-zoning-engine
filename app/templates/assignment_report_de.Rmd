@@ -122,10 +122,9 @@ tmp_tbl = table_data %>%
                 max_dist = ifelse(max_dist >= params$crit_dist,
                                   markup(max_dist), max_dist))
 colnames(tmp_tbl) = header
-print(xtable::xtable(tmp_tbl, caption = 'xtable', digits = 1,
-                     align = c("l", "l", rep("r", times = 6))),
+print(xtable::xtable(tmp_tbl, digits = 1, align = c("l", "l", rep("r", times = 6))),
       booktabs = TRUE, include.rownames = FALSE, comment = FALSE,
-      caption.placement = "top", sanitize.text.function = identity)
+      sanitize.text.function = identity)
 ```
 
 ## Schulen-Blöcke-Zuordnung
