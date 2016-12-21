@@ -342,12 +342,16 @@ ggplot(broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK') %>% left_join(s
 ## Adjazenz von Blöcken
 
 ```{r}
+row.names(blk_in_bez) = blk_in_bez$BLK
+buffeded_blk_in_bez = gBuffer(blk_in_bez, byid=T, width=40)
 adjacency = gIntersects(gBuffer(blk_in_bez, byid=T, width=40), byid = T)
+rownames(adjacency) = blk_in_bez$BLK
+colnames(adjacency) = blk_in_bez$BLK
 
-adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=row.names(.)) %>%
+adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=rownames(.)) %>%
   gather(to, connected, -from) %>% filter(connected) %>%
-  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=row.names(.))) %>%
-  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=row.names(.)))
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=rownames(.))) %>%
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
 
 ggplot() +
   geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK')) + 
@@ -355,6 +359,7 @@ ggplot() +
   theme_nothing() + coord_map()
 
 ggsave('figs/adjacency.pdf')
+adjacency_df %>% filter(connected & from != to) %>% select(from, to) %>% write_csv('app/data/adjacency.csv')
 ```
 
 

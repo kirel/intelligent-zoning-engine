@@ -72,6 +72,15 @@ or
     sh start.sh
     open http://localhost:3535
 
+## Deployment
+
+Private for now.
+
+    docker-compose -f docker-compose-prod.yml build
+    export BASIC_AUTH="/ user pw"
+    docker-compose -f docker-compose-prod.yml up -d
+    open https://ize.idalab-dev.de
+
 ## Datenkatalog
 
 See `DATA.md`

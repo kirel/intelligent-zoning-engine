@@ -1,0 +1,12 @@
+shiny:
+  build: .
+  volumes:
+    - /var/log/ize/:/var/log/
+  ports:
+    - "3838:3838"
+  environment:
+    - "SHINY_LOG_LEVEL=INFO"
+    - "VIRTUAL_HOST=ize.idalab-dev.de"
+    - "VIRTUAL_PORT=3838"
+    - BASIC_AUTH
+  restart: always

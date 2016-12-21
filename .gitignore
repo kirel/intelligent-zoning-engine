@@ -5,6 +5,7 @@ osrm/data/*
 /figs/*
 /app/data/*
 /app/*.log
+.env
 
 # History files
 .Rhistory
