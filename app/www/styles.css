@@ -50,6 +50,10 @@
     margin: 5px 0;
 }
 
+#selected_entity_table td:first-child, #selected_units_table td:first-child {
+  font-weight: bold;
+}
+
 #selected_entity_table .warning {
     color: red;
 }
