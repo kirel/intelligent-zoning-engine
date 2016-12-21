@@ -1,5 +1,6 @@
 source('deps.R')
 source('ga.R')
+source('io.R')
 
 plan(multiprocess)
 
@@ -144,6 +145,7 @@ ui <- fillPage(
                   )),
                   tabPanel("Import/Export", div(id='io',
                       downloadButton('report', 'Report'),
+                      downloadButton('serveGeoJSON', 'GeoJSON'),
                       downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
                       fileInput('readAssignment', 'Zuordnung Hochladen',
                                 accept = c('text/csv',
@@ -817,6 +819,19 @@ server <- function(input, output, session) {
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
     })
+  
+  output$serveGeoJSON = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.geojson')
+    },
+    content = function(con) {
+      tmp_df = isolate(generate_spatial_df(r$units, r$entities, weights,
+                                           NO_ASSIGNMENT))
+      rgdal::writeOGR(tmp_df, con,
+                      layer="entities", driver="GeoJSON",
+                      verbose = TRUE, check_exists = FALSE)
+    }
+  )
 
   output$report = downloadHandler(
     filename = paste0('report_', Sys.Date(), '.pdf'),

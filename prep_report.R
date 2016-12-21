@@ -49,7 +49,7 @@ map_path = file.path(data_path, 'berlin.rds')
 if (file.exists(map_path)) {
   berlin = read_rds(map_path)
 } else {
-  berlin = ggmap::get_map('Berlin')
+  berlin = ggmap::get_map('Berlin', zoom = 10, maptype = "roadmap", language = "de")
   write_rds(berlin, map_path, compress = 'gz')
 }
 
