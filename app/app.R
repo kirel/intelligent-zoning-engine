@@ -744,6 +744,10 @@ server <- function(input, output, session) {
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
   
   ### Variables for detail views
+  
+  warnIfGt = function(num, thres, s) {
+    ifelse(num > thres, paste0('<div class="warning">',s,'</div>'), s)
+  }
 
   output$selected_entity = renderText({
     if (r$selected_entity != NONE_SELECTED) {
@@ -759,13 +763,13 @@ server <- function(input, output, session) {
       d = reactive_table_data()[reactive_table_data()$Schule == r$selected_entity,] %>%
         transmute(
           `Kapazität`=`Kapazität`,
-          Kinder=formatC(Kinder, digits=2, format='f'),
-          Auslastung=percent(Auslastung),
+          Kinder=warnIfGt(Kinder, `Kapazität`, formatC(Kinder, digits=2, format='f')),
+          Auslastung=warnIfGt(Auslastung, 1.1, percent(Auslastung)),
           `SGBII(u.65)`=percent(`SGBII(u.65)`))
       row.names(d) = 'values'
       t(d)
     }
-  }, colnames=F, rownames=T, spacing='xs', width='100%')
+  }, colnames=F, rownames=T, spacing='xs', sanitize.text.function = function(x) x, width='100%')
 
   output$selected_units = renderText({
     if (sum(r$units$selected) > 0) {
