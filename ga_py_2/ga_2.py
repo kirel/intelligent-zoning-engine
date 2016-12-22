@@ -93,7 +93,7 @@ def fitness(assignment):
            np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT
 
 
-def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent):
+def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent, allowed_indices):
     """This function mutates individuals in the population.
 
     Args:
@@ -101,6 +101,7 @@ def mutation(population, sampled_population_ind, mutation_frac, hueristic_expone
         sampled_population_ind: indices of individuals in the populations to be mutated.
         mutation_frac: fraction of units in the individual to be nutated
         hueristic_exponent:
+        allowed_indices: list of indices of "unlocked" units
 
     Returns: a population of mutated individuals
 
@@ -119,7 +120,7 @@ def mutation(population, sampled_population_ind, mutation_frac, hueristic_expone
         mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
 
         # chose which rows to mutate based on the mutation probability
-        mutated_units = np.random.choice(np.arange(num_units), num_mutations, False, mutation_prob)
+        mutated_units = np.random.choice(allowed_indices, num_mutations, False, mutation_prob)
         new_entities = np.random.randint(0, num_entities, len(mutated_units))
         population[ind][mutated_units, :] = 0.
         population[ind][mutated_units, new_entities] = 1.
@@ -176,7 +177,7 @@ def get_prob_from_fitness(population):
     return probs
 
 
-def breed(population, hueristic_exponent, mutation_frac, num_mutants=100, num_pairs=50):
+def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100, num_pairs=50):
     """This function breeds the current population to generate the new population.
     The new population consists of the old population, the mutations and the children.
 
@@ -184,24 +185,29 @@ def breed(population, hueristic_exponent, mutation_frac, num_mutants=100, num_pa
         population:
         hueristic_exponent: used to determine the probability of a unit to be swaped.
         mutation_frac: what fraction of units in an individual should be mutated
+        locked: list of inbdices of "locked" entities whose assignment should not change
         num_mutants: number of individuals in the population to be mutated
         num_pairs: number of pairs to be mated
 
     Returns: new population
 
     """
+
+    num_units, num_entities = population[0].shape
+    allowed_indices = np.array(list(set(np.arange(num_entities)) - set(locked)))
+
     # calculate probability to chose each individual in the population for mutation
     probs = get_prob_from_fitness(population)
 
     sampled_population_ind = np.random.choice(np.arange(len(population)), num_mutants, True, probs)
     mutated_population = mutation(clone_population(population), sampled_population_ind, mutation_frac,
-                                  hueristic_exponent)
+                                  hueristic_exponent, allowed_indices)
 
     mating_population = clone_population(population) + clone_population(mutated_population)
 
     # calculate probability to chose each individual in the mating population for mating
     probs_mating = get_prob_from_fitness(mating_population)
-    pairs = [np.random.choice(np.arange(len(mating_population)), 2, False, probs_mating) for i in range(num_pairs)]
+    pairs = [np.random.choice(allowed_indices, 2, False, probs_mating) for i in range(num_pairs)]
 
     mated = []
     for pair in pairs:
@@ -232,13 +238,14 @@ def select(population, survival_fraction=0.5, max_population=50):
     return survivors
 
 
-def optimization_step(population, num_steps):
+def optimization_step(population, num_steps, locked=[]):
     """This function performs one optimization step - breeds new population,
     select the best candidates from it and writes the best individual to the data base.
 
     Args:
         population:
         num_steps: current number of optimization steps.
+        locked: list of indices of "locked" entities whose assignment should not be changed
 
     Returns:
 
@@ -246,7 +253,7 @@ def optimization_step(population, num_steps):
     hueristic_exponent = 20. / num_steps
     mutation_frac = max(0.1, 1. - num_steps / 3.)
 
-    new_population = breed(population[:], hueristic_exponent, mutation_frac)
+    new_population = breed(population[:], hueristic_exponent, mutation_frac, locked)
     survivors = select(new_population)
 
     return survivors
