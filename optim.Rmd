@@ -286,7 +286,7 @@ Check for self intersections
 ```{r}
 wgs84 = CRS(proj4string(blk))
 ea_projection = CRS("+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
-blk_in_bez = blk[blk$BEZ == '07',]
+blk_in_bez = blk[blk$BEZ == bez_id,]
 gIsValid(blk_in_bez)
 blk_in_bez = gBuffer(spTransform(blk_in_bez, ea_projection), byid=T, width = -0.1)
 any(xor(gIntersects(blk_in_bez, byid=T, returnDense = T), diag(1, length(blk_in_bez)) == 1))
@@ -342,12 +342,16 @@ ggplot(broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK') %>% left_join(s
 ## Adjazenz von Blöcken
 
 ```{r}
+row.names(blk_in_bez) = blk_in_bez$BLK
+buffeded_blk_in_bez = gBuffer(blk_in_bez, byid=T, width=40)
 adjacency = gIntersects(gBuffer(blk_in_bez, byid=T, width=40), byid = T)
+rownames(adjacency) = blk_in_bez$BLK
+colnames(adjacency) = blk_in_bez$BLK
 
-adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=row.names(.)) %>%
+adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=rownames(.)) %>%
   gather(to, connected, -from) %>% filter(connected) %>%
-  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=row.names(.))) %>%
-  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=row.names(.)))
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=rownames(.))) %>%
+  inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
 
 ggplot() +
   geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK')) + 
@@ -355,6 +359,7 @@ ggplot() +
   theme_nothing() + coord_map()
 
 ggsave('figs/adjacency.pdf')
+adjacency_df %>% filter(connected & from != to) %>% select(from, to) %>% write_csv('app/data/adjacency.csv')
 ```
 
 
@@ -484,6 +489,10 @@ units = units %>% sp::merge(
 file.remove('app/data/units.geojson')
 units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
 units@data %>% write_csv('app/data/units.csv')
+
+adjacency_df %>% filter(connected) %>%
+  rowwise() %>% mutate(key=sort(c(from, to))) %>% ungroup() %>%
+  group_by(key) %>% summarise(key)
 ```
 
 #### Zuordnung

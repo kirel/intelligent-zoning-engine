@@ -1,5 +1,6 @@
 source('deps.R')
 source('ga.R')
+source('io.R')
 
 plan(multiprocess)
 
@@ -18,6 +19,7 @@ NO_ASSIGNMENT = NONE_SELECTED
 units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 weights = read_csv('data/weights.csv')
+adjacency = read_csv('data/adjacency.csv', col_types ='cc')
 
 assignment = units@data %>%
   select(unit_id) %>%
@@ -117,21 +119,25 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
-      tabsetPanel(type="tabs",
+      tabsetPanel(type="tabs", id="tabs",
                   tabPanel("Details", div(id='detail',
                       fillRow(
                         div(id='detail--units',
-                            p(uiOutput('selected_units')),
-                            actionButton('deselect_units', 'Auswahl aufheben'),
-                            actionButton('assign_units', 'Zuordnen'),
-                            actionButton('deassign_units', 'Löschen'),
-                            actionButton('lock_units', 'Verriegeln'),
-                            actionButton('unlock_units', 'Entriegeln'),
+                            h4(id='detail--units--selected-units', uiOutput('selected_units')),
+                            div(id='detail--units--controls',
+                                actionButton('deselect_units', '', icon=icon('remove')),
+                                actionButton('assign_units', '', icon=icon('link')),
+                                actionButton('deassign_units', '', icon=icon('unlink')),
+                                actionButton('lock_units', '', icon=icon('lock')),
+                                actionButton('unlock_units', '', icon=icon('unlock'))
+                            ),
                             tableOutput('selected_units_table')
                         ),
                         div(id='detail--entity',
                             h4(textOutput('selected_entity')),
-                            actionButton('deselect_entity', 'Auswahl aufheben'),
+                            div(id='detail--units--controls',
+                                actionButton('deselect_entity', '', icon=icon('remove'))
+                            ),
                             tableOutput('selected_entity_table')
                         )
                       )
@@ -139,6 +145,7 @@ ui <- fillPage(
                   )),
                   tabPanel("Import/Export", div(id='io',
                       downloadButton('report', 'Report'),
+                      downloadButton('serveGeoJSON', 'GeoJSON'),
                       downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
                       fileInput('readAssignment', 'Zuordnung Hochladen',
                                 accept = c('text/csv',
@@ -546,15 +553,24 @@ server <- function(input, output, session) {
   fitness_f = function(individual) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 1
-    DIST_WEIGHT = 1/2000^2 # 2000m means penalty of 1
+    DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
     OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
     UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
+    
+    # TODO coherence cost as number of connected components
+    filtered_edges = adjacency %>%
+      inner_join(individual, by=c('from'='unit_id'), copy = T) %>%
+      inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
+      filter(entity_id == to_entity_id)
+    
+    coherence_cost = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))/length(entity_ids)
+    
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
       summarise(
         avg=sum(avg*population)/sum(population), # population weighted mean
-        max=sum(max*population)/sum(population), # population weighted max # TODO remove?
+        max=max(max), # per catchment area look at maximum distance
         population=sum(population)
         ) %>%
       inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
@@ -562,7 +578,7 @@ server <- function(input, output, session) {
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(
         avg=mean(avg^2), # squared average distance
-        max=mean(max^2), # squared average distance
+        max=mean(max^2), # squared average maximum distance
         over_capacity_penalty=mean(over_capacity_penalty),
         under_capacity_penalty=mean(under_capacity_penalty)
         ) %>%
@@ -580,10 +596,11 @@ server <- function(input, output, session) {
           flog.debug('Max distance error: %s', x$max, name='optimization')
           flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
           flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
+          flog.debug('Coherence cost: %s', coherence_cost, name='optimization')
         }
         x
       }) %>%
-      mutate(fitness = max + over_capacity_penalty + under_capacity_penalty) %>% .$fitness
+      mutate(fitness = avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
   }
 
   mem_fitness_f = memoise(fitness_f)
@@ -641,7 +658,7 @@ server <- function(input, output, session) {
         Kapazität=capacity,
         Kinder=pop,
         Auslastung=utilization,
-        `ΔAusl.`=delta_utilization,
+        #`ΔAusl.`=delta_utilization,
         `SGBII(u.65)`=sgbIIu65,
         #`Weg (min)`=min_dist,
         `Weg (Ø)`=avg_dist,
@@ -655,12 +672,16 @@ server <- function(input, output, session) {
 
   rowCallback = DT::JS("function(row, data) {",
 "
-  if (data[4]+data[5] > 1) {
-    $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+  // if (data[4]+data[5] > 1) {
+  if (data[4] > 1.1) {
+    // $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+    $('td:eq(4)', row).addClass('capacity-panic').removeClass('capacity-ok');
   } else {
-    $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
+    // $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
+    $('td:eq(4)', row).addClass('capacity-ok').removeClass('capacity-panic');
   }
 
+/*
   if (data[5] > 0) {
     $('td:eq(5)', row).addClass('change-up').removeClass('change-down').removeClass('no-change');
   } else if (data[5] < 0) {
@@ -668,9 +689,10 @@ server <- function(input, output, session) {
   } else {
     $('td:eq(5)', row).addClass('no-change').removeClass('change-down').removeClass('change-up');
   }
+*/
 
   $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')
-  $('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
+  //$('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
 ",
   "}")
 
@@ -680,7 +702,8 @@ server <- function(input, output, session) {
         options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
-      formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
+      #formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
+      formatPercentage(c('Auslastung', 'SGBII(u.65)'), digits = 2) %>%
       formatRound(c(
         'Kinder',
         #'Weg (min)',
@@ -723,6 +746,10 @@ server <- function(input, output, session) {
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
   
   ### Variables for detail views
+  
+  warnIfGt = function(num, thres, s) {
+    ifelse(num > thres, paste0('<div class="warning">',s,'</div>'), s)
+  }
 
   output$selected_entity = renderText({
     if (r$selected_entity != NONE_SELECTED) {
@@ -738,13 +765,13 @@ server <- function(input, output, session) {
       d = reactive_table_data()[reactive_table_data()$Schule == r$selected_entity,] %>%
         transmute(
           `Kapazität`=`Kapazität`,
-          Kinder=formatC(Kinder, digits=2, format='f'),
-          Auslastung=percent(Auslastung),
+          Kinder=warnIfGt(Kinder, `Kapazität`, formatC(Kinder, digits=2, format='f')),
+          Auslastung=warnIfGt(Auslastung, 1.1, percent(Auslastung)),
           `SGBII(u.65)`=percent(`SGBII(u.65)`))
       row.names(d) = 'values'
       t(d)
     }
-  }, colnames=F, rownames=T, spacing='xs', width='100%')
+  }, colnames=F, rownames=T, spacing='xs', sanitize.text.function = function(x) x, width='100%')
 
   output$selected_units = renderText({
     if (sum(r$units$selected) > 0) {
@@ -759,6 +786,7 @@ server <- function(input, output, session) {
     if (sum(r$units$selected) > 0) {
       selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
         summarise(
+          Anzahl=n(),
           Kinder=formatC(sum(population, na.rm=T), digits=2, format='f'),
           `SGBII(u.65)`=percent(sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T))
         )
@@ -770,7 +798,12 @@ server <- function(input, output, session) {
   ### optimization
 
   output$optimize_button = renderUI({
-    actionButton('optimize', label = ifelse(r$running_optimization, 'Optimierung stoppen', 'Optimierung starten'))
+    if (r$running_optimization) {
+      actionButton('optimize', label = 'Optimierung stoppen', icon = icon('stop'))
+    } else {
+      actionButton('optimize', label = 'Optimierung starten', icon = icon('play'))
+    }
+    
   })
   
   ### Export
@@ -786,6 +819,19 @@ server <- function(input, output, session) {
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
     })
+  
+  output$serveGeoJSON = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.geojson')
+    },
+    content = function(con) {
+      tmp_df = isolate(generate_spatial_df(r$units, r$entities, weights,
+                                           NO_ASSIGNMENT))
+      rgdal::writeOGR(tmp_df, con,
+                      layer="entities", driver="GeoJSON",
+                      verbose = TRUE, check_exists = FALSE)
+    }
+  )
 
   output$report = downloadHandler(
     filename = paste0('report_', Sys.Date(), '.pdf'),

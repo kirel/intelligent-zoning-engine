@@ -1,5 +1,24 @@
-#map-panel { height: calc(100% - 260px); }
-#table-panel { height: 100%; overflow: scroll; }
+body {
+  min-width: 1200px;
+}
+
+/*** Map ***/
+
+#map-panel {
+  height: calc(100% - 260px);
+}
+
+/* see http://iros.github.io/patternfills/sample_css.html */
+#svg-patterns { position: absolute; }
+.unlocked { fill: transparent; }
+.locked { fill: url(#locked-pattern); }
+
+/*** Table ***/
+
+#table-panel {
+  height: 100%; overflow: scroll;
+}
+
 .capacity-ok { color: green; }
 .capacity-ok .glyphicon-remove { display: none; }
 .capacity-panic { color: red; }
@@ -7,7 +26,51 @@
 .change-up .glyphicon-arrow-down { display: none; }
 .change-down .glyphicon-arrow-up { display: none; }
 .no-change { color: transparent; }
-/* see http://iros.github.io/patternfills/sample_css.html */
-#svg-patterns { position: absolute; }
-.unlocked { fill: transparent; }
-.locked { fill: url(#locked-pattern); }
+
+/*** Tabs & Detail ***/
+
+#tabs {
+  margin-top: 2px;
+}
+
+.tab-pane {
+  padding: 2px;
+}
+
+#selected_units, #selected_entity {
+  width: 90%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#detail--units, #detail--entity {
+    position: relative;
+    margin: 0 5px;
+}
+
+#detail--units--selected-units {
+  margin-top: 10px;
+}
+
+#detail--units #deselect_units, #detail--entity #deselect_entity {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0 2px;
+    border: none;
+    font-size: 1.2em;
+    margin: 0 2px;
+}
+
+#detail--units--controls, #detail--entity--controls {
+    margin: 5px 0;
+}
+
+#selected_entity_table td:first-child, #selected_units_table td:first-child {
+  font-weight: bold;
+}
+
+#selected_entity_table .warning {
+    color: red;
+}

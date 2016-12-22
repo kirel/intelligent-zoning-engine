@@ -2,3 +2,8 @@ packrat/lib*
 data
 download
 output
+osrm
+docs
+figs
+.git
+.Rproj.user
