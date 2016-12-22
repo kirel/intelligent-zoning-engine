@@ -5,7 +5,7 @@ import igraph
 
 from read_meta_data_2 import read_data
 
-units, entities, weights, capacity, units_population = read_data('../app-data', 'max')
+units, entities, weights, capacity, units_population = read_data('../app_data_fixed', 'max')
 
 OVER_CAPACITY_PENALTY = 1
 UNDER_CAPACITY_PENALTY = 1
@@ -79,12 +79,12 @@ def get_filtered_adj_components_num(assignment, adjacency):
 
     """
     num_units, num_entities = assignment.shape
-    assign_adj = np.ones((num_entities, num_entities))
+    assign_adj = np.empty((num_units, num_units))
 
     # fixme do something with matrices instead of looping
-    for i in range(num_entities):
-        assigned_unit = np.where(assignment[i] == 1)[0][0]
-        assign_adj[i] = np.multiply(assign_adj[:, assigned_unit], assign_adj[i])
+    for i in range(num_units):
+        assigned_ent = np.where(assignment[i] == 1)[0][0]
+        assign_adj[i] = np.multiply(assignment[:, assigned_ent], adjacency[i])
 
     filtered_adjacency = np.nultiply(assign_adj, adjacency)
 
