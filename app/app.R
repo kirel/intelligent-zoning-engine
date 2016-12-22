@@ -200,6 +200,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
+    resetOptimization()
   })
   
   observeEvent(input$deassign_units, {
@@ -208,6 +209,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
+    resetOptimization()
   })
   
   observeEvent(input$deselect_units, {
@@ -221,12 +223,14 @@ server <- function(input, output, session) {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
+    resetOptimization()
   })
   
   observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
+    resetOptimization()
   })
   
   observeEvent(input$deselect_entity, {
@@ -345,7 +349,8 @@ server <- function(input, output, session) {
       # r$assignment_rev = r$assignment_rev + 1
 
       # cancel optimization step (which is now invalid)
-      resetOptimization()
+      # FIXME dont do under current model!
+      # resetOptimization()
     }
   })
 
