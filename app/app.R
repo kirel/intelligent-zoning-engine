@@ -200,6 +200,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
+    resetOptimization()
   })
   
   observeEvent(input$deassign_units, {
@@ -208,6 +209,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
+    resetOptimization()
   })
   
   observeEvent(input$deselect_units, {
@@ -221,12 +223,14 @@ server <- function(input, output, session) {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
+    resetOptimization()
   })
   
   observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
+    resetOptimization()
   })
   
   observeEvent(input$deselect_entity, {
@@ -345,7 +349,8 @@ server <- function(input, output, session) {
       # r$assignment_rev = r$assignment_rev + 1
 
       # cancel optimization step (which is now invalid)
-      resetOptimization()
+      # FIXME dont do under current model!
+      # resetOptimization()
     }
   })
 
@@ -436,7 +441,8 @@ server <- function(input, output, session) {
     # select only blocks with stats and assign random schools for unassigned blocks
     current = units %>% as.data.frame() %>%
       filter(unit_id %in% optimizable_units) %>%
-      select(unit_id) %>% left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id), by='unit_id') %>%
+      select(unit_id) %>%
+      left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
       mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
 
     r$ga_population = list(current)
@@ -518,18 +524,21 @@ server <- function(input, output, session) {
   # randomly reassign a number of schools
   mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
-    num_mutations = ceiling(fraction*nrow(individual))
-    # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
-    # TODO divide exponent by optimization step
-    prob = individual %>% inner_join(weights, by=c('unit_id', 'entity_id')) %>%
-      transmute(avg=avg, cost=(avg/max(avg))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
     #cost = rep(1, nrow(individual))
     #cost = 1-cost
-    mutation_idx = sample(1:nrow(individual), num_mutations, prob = prob)
+    locked_idx = (1:nrow(individual))[individual$locked]
+    mutatable_idx = setdiff(1:nrow(individual), locked_idx)
+    num_mutations = min(ceiling(fraction*nrow(individual)), length(mutatable_idx))
+    # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
+    prob = individual[mutatable_idx,] %>% inner_join(weights, by=c('unit_id', 'entity_id')) %>%
+      transmute(avg=avg, cost=(avg/max(avg))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
+    mutation_idx = sample(mutatable_idx, num_mutations, prob = prob)
     mutation_units = as.character(individual[mutation_idx, 'unit_id'])
     # TODO flip pairs instead of random assignment
     # preferrably select schools closer to the block
-    mutations = mutation_units %>% map(~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent)))
+    mutations = mutation_units %>% map(
+      ~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent))
+      )
     individual[mutation_idx, 'entity_id'] = unlist(mutations)
     individual
   }
@@ -543,8 +552,11 @@ server <- function(input, output, session) {
     child_a = a[,]
     child_b = b[,]
     fraction = runif(1)
-    num_genes = ceiling(fraction*sum(difference))
-    swap_idx = sample((1:nrow(a))[difference], num_genes)
+    # locked should always be the same for a and b # FIXME can be more efficient!
+    locked_idx = (1:nrow(a))[a$locked]
+    mutatable_idx = setdiff((1:nrow(a))[difference], locked_idx)
+    num_genes = min(ceiling(fraction*sum(difference)), length(mutatable_idx))
+    swap_idx = sample(mutatable_idx, num_genes)
     child_a[swap_idx, 'entity_id'] = b[swap_idx, 'entity_id']
     child_b[swap_idx, 'entity_id'] = a[swap_idx, 'entity_id']
     list(child_a, child_b)
