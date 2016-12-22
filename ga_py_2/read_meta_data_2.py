@@ -41,7 +41,7 @@ def read_data(folder, measurement='max'):
 
     # read adjacencies and construct adjecency matrix
     df_adj = pd.read_csv(os.path.join(folder, 'adjacency.csv'))
-    df_adj = df_adj[df_units['from'].isin(units_id) & df_units['to'].isin(units_id)]
+    df_adj = df_adj[df_adj['from'].isin(units_id) & df_adj['to'].isin(units_id)]
     num_units = len(units_id)
     adj_mat = np.empty((num_units, num_units)).astype(int)
     units_dict = {u_id: i for i, u_id in enumerate(units_id)}

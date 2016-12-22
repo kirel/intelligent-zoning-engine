@@ -36,11 +36,12 @@ def write_results(best_solution, entities, units):
     return
 
 
-def run():
+if '__name__' == '__main__':
 
     population_size = 100
 
     while True:
+        print('yo')
         time.sleep(0.1)
         optimize = get_instruction("'optimize'")[0][1]
 
