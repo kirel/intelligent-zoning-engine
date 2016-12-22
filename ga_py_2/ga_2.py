@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+import igraph
+
 from read_meta_data_2 import read_data
 
 units, entities, weights, capacity, units_population = read_data('../app-data', 'max')
@@ -8,7 +10,7 @@ units, entities, weights, capacity, units_population = read_data('../app-data', 
 OVER_CAPACITY_PENALTY = 1
 UNDER_CAPACITY_PENALTY = 1
 
-DIST_WEIGHT = 1 / 2000 ** 2
+DIST_WEIGHT = 1 / 1000 ** 2
 OVER_CAPACITY_WEIGHT = 1 / 200
 UNDER_CAPACITY_WEIGHT = 1 / 200
 
@@ -66,7 +68,35 @@ def initialize_individual(num_units, num_entities):
     return assign_mat
 
 
-def fitness(assignment):
+def get_filtered_adj_components_num(assignment, adjacency):
+    """This function creates an adjacency matrix from the assignment. Units that are assigned to the
+       same entity will be adjacent.
+
+    Args:
+        asignment:
+
+    Returns:
+
+    """
+    num_units, num_entities = assignment.shape
+    assign_adj = np.ones((num_entities, num_entities))
+
+    # fixme do something with matrices instead of looping
+    for i in range(num_entities):
+        assigned_unit = np.where(assignment[i] == 1)[0][0]
+        assign_adj[i] = np.multiply(assign_adj[:, assigned_unit], assign_adj[i])
+
+    filtered_adjacency = np.nultiply(assign_adj, adjacency)
+
+    g = igraph.Graph.Adjacency(filtered_adjacency)
+    num_comp = len(g.components())
+
+    return num_comp
+
+
+
+
+def fitness(assignment, adjacency):
     """ Fitness function to be minimized.
         The fitness is quadratic in the distance between the units and entities,
         and in over and under capacity. the distance and capacity may have different weights.
@@ -89,8 +119,10 @@ def fitness(assignment):
 
     distance_val = np.sum(np.multiply(assignment, weights) ** 2)
 
+    coherence_cost = get_filtered_adj_components_num(assignment, adjacency)
+
     return distance_val * DIST_WEIGHT + np.sum(over_cap_vec) * OVER_CAPACITY_WEIGHT + \
-           np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT
+           np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT + coherence_cost
 
 
 def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent, allowed_indices):
