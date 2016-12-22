@@ -86,9 +86,9 @@ def get_filtered_adj_components_num(assignment):
         assigned_ent = np.where(assignment[i] == 1)[0][0]
         assign_adj[i] = np.multiply(assignment[:, assigned_ent], adj_mat[i])
 
-    filtered_adjacency = np.nultiply(assign_adj, adj_mat)
+    filtered_adjacency = np.multiply(assign_adj, adj_mat)
 
-    g = igraph.Graph.Adjacency(filtered_adjacency)
+    g = igraph.Graph.Adjacency(filtered_adjacency.tolist())
     num_comp = len(g.components())
 
     return num_comp
@@ -147,7 +147,8 @@ def mutation(population, sampled_population_ind, mutation_frac, hueristic_expone
     for ind in sampled_population_ind:
         # calculate mutation probability for each unit.
         # hueristic_exponen allows mutating with high prob units with large distances.
-        fitness_vals_normed = np.multiply(population[ind], weights).sum(axis=1) / np.max(weights)
+        fitness_vals_normed = (np.multiply(population[ind], weights).sum(axis=1) / np.max(weights))[allowed_indices]
+
         exploration_fitness_vals = fitness_vals_normed ** hueristic_exponent
         mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
 
@@ -160,7 +161,7 @@ def mutation(population, sampled_population_ind, mutation_frac, hueristic_expone
     return [population[ind] for ind in sampled_population_ind]
 
 
-def crossover(ind_a, ind_b):
+def crossover(ind_a, ind_b, locked):
     """This function mates between two individuals and creates two children using swap strategie.
 
     Args:
@@ -172,7 +173,9 @@ def crossover(ind_a, ind_b):
     """
 
     diffs = np.logical_not(np.equal(ind_a, ind_b).prod(axis=1))
-    num_diffs = np.sum(diffs)
+    diffs_ind = np.where(diffs == 0)
+    allowed_diffs = np.array(list(set(diffs_ind[0]) - set(locked)))
+    num_diffs = allowed_diffs.shape[0]
 
     # don't swap if the assignment of the individuals is identical
     if num_diffs == 0:
@@ -184,7 +187,7 @@ def crossover(ind_a, ind_b):
     # chose randomly which units to swap
     fraction = np.random.rand(1)
     num_genes = int(fraction * num_diffs)
-    swap_ind = np.random.choice(np.arange(ind_a.shape[0])[diffs], num_genes)
+    swap_ind = np.random.choice(np.arange(ind_a.shape[0])[allowed_diffs], num_genes)
 
     child_a[swap_ind] = ind_b[swap_ind]
     child_b[swap_ind] = ind_a[swap_ind]
@@ -226,7 +229,7 @@ def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100
     """
 
     num_units, num_entities = population[0].shape
-    allowed_indices = np.array(list(set(np.arange(num_entities)) - set(locked)))
+    allowed_indices = np.array(list(set(np.arange(num_units)) - set(locked)))
 
     # calculate probability to chose each individual in the population for mutation
     probs = get_prob_from_fitness(population)
@@ -239,11 +242,11 @@ def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100
 
     # calculate probability to chose each individual in the mating population for mating
     probs_mating = get_prob_from_fitness(mating_population)
-    pairs = [np.random.choice(allowed_indices, 2, False, probs_mating) for i in range(num_pairs)]
+    pairs = [np.random.choice(np.arange(len(mating_population)), 2, False, probs_mating) for i in range(num_pairs)]
 
     mated = []
     for pair in pairs:
-        mating_res = crossover(mating_population[pair[0]], mating_population[pair[1]])
+        mating_res = crossover(mating_population[pair[0]], mating_population[pair[1]], locked)
         if len(mating_res) > 0:
             mated.append(mating_res[0])
             mated.append(mating_res[1])
@@ -270,7 +273,7 @@ def select(population, survival_fraction=0.5, max_population=50):
     return survivors
 
 
-def optimization_step(population, num_steps, locked=[]):
+def optimization_step(population, num_steps, locked=[1, 500, 88, 94, 456, 330]):
     """This function performs one optimization step - breeds new population,
     select the best candidates from it and writes the best individual to the data base.
 
