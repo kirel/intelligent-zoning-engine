@@ -5,7 +5,7 @@ import igraph
 
 from read_meta_data_2 import read_data
 
-units, entities, weights, capacity, units_population = read_data('../app_data_fixed', 'max')
+units, entities, weights, capacity, units_population, adj_mat = read_data('../app_data_fixed', 'max')
 
 OVER_CAPACITY_PENALTY = 1
 UNDER_CAPACITY_PENALTY = 1
@@ -68,7 +68,7 @@ def initialize_individual(num_units, num_entities):
     return assign_mat
 
 
-def get_filtered_adj_components_num(assignment, adjacency):
+def get_filtered_adj_components_num(assignment):
     """This function creates an adjacency matrix from the assignment. Units that are assigned to the
        same entity will be adjacent.
 
@@ -84,9 +84,9 @@ def get_filtered_adj_components_num(assignment, adjacency):
     # fixme do something with matrices instead of looping
     for i in range(num_units):
         assigned_ent = np.where(assignment[i] == 1)[0][0]
-        assign_adj[i] = np.multiply(assignment[:, assigned_ent], adjacency[i])
+        assign_adj[i] = np.multiply(assignment[:, assigned_ent], adj_mat[i])
 
-    filtered_adjacency = np.nultiply(assign_adj, adjacency)
+    filtered_adjacency = np.nultiply(assign_adj, adj_mat)
 
     g = igraph.Graph.Adjacency(filtered_adjacency)
     num_comp = len(g.components())
@@ -96,7 +96,7 @@ def get_filtered_adj_components_num(assignment, adjacency):
 
 
 
-def fitness(assignment, adjacency):
+def fitness(assignment):
     """ Fitness function to be minimized.
         The fitness is quadratic in the distance between the units and entities,
         and in over and under capacity. the distance and capacity may have different weights.
@@ -119,7 +119,7 @@ def fitness(assignment, adjacency):
 
     distance_val = np.sum(np.multiply(assignment, weights) ** 2)
 
-    coherence_cost = get_filtered_adj_components_num(assignment, adjacency)
+    coherence_cost = get_filtered_adj_components_num(assignment)
 
     return distance_val * DIST_WEIGHT + np.sum(over_cap_vec) * OVER_CAPACITY_WEIGHT + \
            np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT + coherence_cost
