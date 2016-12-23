@@ -193,9 +193,7 @@ def mutate_individual_borders(individual, allowed_indices, hueristic_exponent, n
     """
     # calculate mutation probability for each unit.
     # hueristic_exponen allows mutating with high prob units with large distances.
-    num_units, num_entities = individual.shape
     fitness_vals_normed = (np.multiply(individual, weights).sum(axis=1) / np.max(weights))[allowed_indices]
-
     exploration_fitness_vals = fitness_vals_normed ** hueristic_exponent
     mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
 
@@ -204,10 +202,10 @@ def mutate_individual_borders(individual, allowed_indices, hueristic_exponent, n
     previous_state = np.copy(individual)
     for unit in mutated_units:
         neighbors = np.where(adj_mat[unit] > 0)
-        neighbors_assigns = [np.where(previous_state[neighbor] > 0) for neighbor in neighbors]
+        neighbors_assigns = set([np.where(previous_state[neighbor] > 0) for neighbor in neighbors])
         new_assign = np.random.randint(0, 1, len(neighbors_assigns))
         individual[unit] = 0
-        individual[unit, new_assign] = 1
+        individual[unit, neighbors_assigns[new_assign]] = 1
 
     return individual
 
