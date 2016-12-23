@@ -37,10 +37,10 @@ def write_results(best_solution, entities, units):
 
 
 def run():
-
     population_size = 100
 
     while True:
+        print('yo')
         time.sleep(0.1)
         optimize = get_instruction("'optimize'")[0][1]
 
@@ -56,6 +56,7 @@ def run():
             num_steps = 1
             new_pop = init_population
             while optimize:
+                print('opt')
                 new_pop = optimization_step(new_pop, num_steps)
                 best_solution = new_pop[0]
                 write_results(best_solution, entities, units)
