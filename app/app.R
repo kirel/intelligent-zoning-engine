@@ -1,8 +1,9 @@
 source('deps.R')
-source('ga.R')
 source('io.R')
 
 plan(multiprocess)
+
+con <- dbConnect(RSQLite::SQLite(), "data/communication.sqlite")
 
 options(shiny.autoreload=T)
 options(shiny.host="0.0.0.0")
@@ -184,8 +185,7 @@ server <- function(input, output, session) {
   
   # variables for R optimization implementation
   ga = reactiveValues(
-    population_future=future(NULL),
-    population=NULL
+    last_timestamp = 0
     )
 
   ### Interaction
@@ -197,7 +197,7 @@ server <- function(input, output, session) {
       r$running_optimization = FALSE
     } else {
       r$running_optimization = TRUE
-      start_optimization(r$units)
+      start_optimization(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked))
     }
   })
   
@@ -441,10 +441,8 @@ server <- function(input, output, session) {
     # TODO talk to python
     flog.info('(Re-)Starting optimization')
     r$optimization_step = 0
-    # ga$population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
-    forget(mem_fitness_f)
-    reset_ga_population(assignment)
-    # actual optimization is started in main optimization loop # TODO should happen here for python
+    dbWriteTable(con, 'input', assignment, overwrite=T)
+    dbSendQuery(con, 'INSERT INTO instructions VALUES ("start")')
   }
   
   reset_optimization = function(assignment) {
@@ -454,35 +452,26 @@ server <- function(input, output, session) {
   }
   
   stop_optimization = function() {
-    # TODO talk to python
+    dbSendQuery(con, 'INSERT INTO instructions VALUES ("stop")')
   }
   
   is_optim_solution_updated = function() {
-    # TODO talk to python
-    if (resolved(ga$population_future)) {
-      future_population = value(ga$population_future)
-      !is.null(future_population)
-    } else FALSE
+    solution_meta = dbReadTable(con, 'solution_meta', assignment)
+    is.null(ga$last_timestamp) | solution_meta$timestamp > ga$last_timestamp
   }
   
   get_optim_solution = function() {
-    # TODO talk to python
-    future_population = value(ga$population_future)
-    ga$population = future_population
-    fittest = ga$population[[1]]
-    score = mem_fitness_f(fittest)
-    list(solution=fittest, score=score)
+    solution_meta = dbReadTable(con, 'solution_meta', assignment)
+    solution = dbReadTable(con, 'solution', assignment)
+    ga$last_timestamp = solution_meta$timestamp
+    list(solution=solution, score=solution_meta$score)
   }
   
   # main optimization loop
   observe({
     if (r$running_optimization) {
+      flog.info('Ticking')
       isolate({
-        # Start initial optimization step # TODO this should happen in Python automatically
-        if (resolved(ga$population_future) & is.null(value(ga$population_future))) {
-          r$optimization_step = r$optimization_step + 1
-          next_optimization_step(r$optimization_step)
-        }
         
         # get updated solution
         if (is_optim_solution_updated()) {
@@ -501,9 +490,6 @@ server <- function(input, output, session) {
           r$units$updated = r$units$updated | r$units$entity_id != prev_entities
             
           r$assignment_rev = r$assignment_rev + 1
-          
-          # Start new optimization step # TODO this should happen in Python automatically
-          next_optimization_step(r$optimization_step)
         } # otherwise just skip and do nothing in this iteration
         
       })
@@ -517,139 +503,6 @@ server <- function(input, output, session) {
       geom_line(aes(x=seq_along(diff(r$fittest_fitness))+1, y=diff(r$fittest_fitness)*(-1)), linetype=2) +
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
-
-  ### genetic algorithm
-  
-  ## R implementation of GA # TODO remove
-  
-  reset_ga_population = function(assignment) {
-    # select only blocks with stats and assign random schools for unassigned blocks
-    current = units %>% as.data.frame() %>%
-      filter(unit_id %in% optimizable_units) %>%
-      select(unit_id) %>%
-      left_join(assignment %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
-      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-    
-    ga$population = list(current)
-  }
-  
-  next_optimization_step = function(step) {
-    heuristic_exponent = 20/step^(1) # TODO = 1/2?
-    mutation_fraction = max(0.001, 1-(step-1)/3)
-    flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', step, mutation_fraction, heuristic_exponent)
-    
-    ga$population_future = future({
-      ga_select(
-        ga_breed(ga$population,
-                 ga_mutate=mutation_f,
-                 ga_crossover=crossover_f,
-                 fitness_f=mem_fitness_f,
-                 mutation_fraction=mutation_fraction,
-                 num_pairs = 50,
-                 num_mutants = 50,
-                 heuristic_exponent = heuristic_exponent),
-        mem_fitness_f,
-        max_population = 50)
-    })  
-  }
-  
-  # randomly reassign a number of schools
-  mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
-    if (fraction == 0) return(individual)
-    #cost = rep(1, nrow(individual))
-    #cost = 1-cost
-    locked_idx = (1:nrow(individual))[individual$locked]
-    mutatable_idx = setdiff(1:nrow(individual), locked_idx)
-    num_mutations = min(ceiling(fraction*nrow(individual)), length(mutatable_idx))
-    # preferrably select high costs blocks to mutate # FIXME does this hurt dense areas?
-    prob = individual[mutatable_idx,] %>% inner_join(weights, by=c('unit_id', 'entity_id')) %>%
-      transmute(avg=avg, cost=(avg/max(avg))^heuristic_exponent, prob=cost/sum(cost)) %>% .$prob
-    mutation_idx = sample(mutatable_idx, num_mutations, prob = prob)
-    mutation_units = as.character(individual[mutation_idx, 'unit_id'])
-    # TODO flip pairs instead of random assignment
-    # preferrably select schools closer to the block
-    mutations = mutation_units %>% map(
-      ~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent))
-      )
-    individual[mutation_idx, 'entity_id'] = unlist(mutations)
-    individual
-  }
-
-  # randomly mix assignments from two individuals into two new ones
-  # TODO only where they are different
-  crossover_f = function(a, b) {
-    # only select from genes that are different
-    difference = a$entity_id != b$entity_id
-    if (sum(difference)==0) return(list(a, b))
-    child_a = a[,]
-    child_b = b[,]
-    fraction = runif(1)
-    # locked should always be the same for a and b # FIXME can be more efficient!
-    locked_idx = (1:nrow(a))[a$locked]
-    mutatable_idx = setdiff((1:nrow(a))[difference], locked_idx)
-    num_genes = min(ceiling(fraction*sum(difference)), length(mutatable_idx))
-    swap_idx = sample(mutatable_idx, num_genes)
-    child_a[swap_idx, 'entity_id'] = b[swap_idx, 'entity_id']
-    child_b[swap_idx, 'entity_id'] = a[swap_idx, 'entity_id']
-    list(child_a, child_b)
-  }
-
-  fitness_f = function(individual) {
-    OVER_CAPACITY_PENALTY = 1
-    UNDER_CAPACITY_PENALTY = 1
-    DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
-    OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
-    UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
-    
-    # TODO coherence cost as number of connected components
-    filtered_edges = adjacency %>%
-      inner_join(individual, by=c('from'='unit_id'), copy = T) %>%
-      inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
-      filter(entity_id == to_entity_id)
-    
-    coherence_cost = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))/length(entity_ids)
-    
-    individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
-      inner_join(weights, by=c('unit_id', 'entity_id')) %>%
-      group_by(entity_id) %>%
-      summarise(
-        avg=sum(avg*population)/sum(population), # population weighted mean
-        max=max(max), # per catchment area look at maximum distance
-        population=sum(population)
-        ) %>%
-      inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
-      rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
-      mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
-      summarise(
-        avg=mean(avg^2), # squared average distance
-        max=mean(max^2), # squared average maximum distance
-        over_capacity_penalty=mean(over_capacity_penalty),
-        under_capacity_penalty=mean(under_capacity_penalty)
-        ) %>%
-      mutate(
-        avg = DIST_WEIGHT*avg,
-        max = DIST_WEIGHT*max,
-        over_capacity_penalty = OVER_CAPACITY_WEIGHT*over_capacity_penalty,
-        under_capacity_penalty = UNDER_CAPACITY_WEIGHT*under_capacity_penalty
-        ) %>%
-      (function(x) {
-        #if (runif(1)<0) {
-        if (runif(1)<0.01) {
-          flog.debug('Random sample error components', name='optimization')
-          flog.debug('Avg distance error: %s', x$avg, name='optimization')
-          flog.debug('Max distance error: %s', x$max, name='optimization')
-          flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
-          flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
-          flog.debug('Coherence cost: %s', coherence_cost, name='optimization')
-        }
-        x
-      }) %>%
-      mutate(fitness = avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
-  }
-
-  mem_fitness_f = memoise(fitness_f)
-  
-  ### /genetic algorithm
 
   ### table
 
