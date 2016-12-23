@@ -2,6 +2,8 @@ import sqlite3
 import pandas as pd
 import numpy as np
 
+import time
+
 sqlite_file = 'zoning_db.sqlite'
 
 solution_table_name = 'solution'
@@ -9,6 +11,9 @@ input_table_name = 'input'
 
 instructions_table_name = 'instructions'
 instruction_column = 'instruction'
+
+time_stamp_table_name = 'last_solution_time'
+time_column = 'timestamp'
 
 TIMEOUT = 60
 
@@ -27,13 +32,15 @@ def create_db():
 
     c = conn.cursor()
 
-    set_assignment(init_assignment)
-    set_assignment(init_assignment, input_table_name)
-    c.execute("CREATE TABLE {tn} ({nf} {ft} PRIMARY KEY)".
+    c.execute("CREATE TABLE {tn} ({nf} {ft})".
+              format(tn=time_stamp_table_name, nf=time_column, ft='INT'))
+    c.execute("CREATE TABLE {tn} ({nf} {ft})".
               format(tn=instructions_table_name, nf=instruction_column, ft='TEXT'))
-
     conn.commit()
     conn.close()
+
+    set_assignment(init_assignment)
+    set_assignment(init_assignment, input_table_name)
 
     return
 
@@ -50,7 +57,7 @@ def get_instruction():
 
     read_str = "SELECT * FROM " + instructions_table_name + " ORDER BY ROWID ASC LIMIT 1"
 
-    delete_str = "DELETE FROM " + instructions_table_name +  \
+    delete_str = "DELETE FROM " + instructions_table_name + \
                  " WHERE ROWID IN (SELECT ROWID FROM " + instructions_table_name + " ASC LIMIT 1)"
     c.execute(read_str)
     res = c.fetchall()
@@ -82,6 +89,18 @@ def set_assignment(assignment_df, table_name=solution_table_name):
     assignment_df.to_sql(table_name, conn, if_exists='replace')
     conn.commit()
     conn.close()
+
+    if table_name == solution_table_name:
+        conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
+        c = conn.cursor()
+
+        delete_str = "DELETE FROM " + time_stamp_table_name
+        c.execute(delete_str)
+        conn.commit()
+        c.execute("INSERT INTO {tn} ({cn}) VALUES ({val})". \
+                  format(tn=time_stamp_table_name, cn=time_column, val=int(time.time())))
+        conn.commit()
+        conn.close()
 
     return
 
