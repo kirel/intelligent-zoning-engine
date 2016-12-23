@@ -115,3 +115,13 @@ process: output/HKO_2015.geojson output/sampled_buildings.rds output/route_matri
 optim.nb.html: optim.Rmd output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
 	Rscript -e "rmarkdown::render('optim.Rmd')"
 app_data: optim.nb.html
+
+
+# *** Python
+
+venv: .venv/bin/activate
+.venv/bin/activate: requirements.txt
+	test -d .venv || virtualenv .venv --python=python3
+	.venv/bin/pip install -U pip
+	test -e requirements.txt && .venv/bin/pip install -r requirements.txt || echo 'Warning: No requirements to install'
+	touch .venv/bin/activate
