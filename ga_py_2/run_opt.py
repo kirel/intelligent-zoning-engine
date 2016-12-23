@@ -36,8 +36,7 @@ def write_results(best_solution, entities, units):
     return
 
 
-if '__name__' == '__main__':
-
+def run():
     population_size = 100
 
     while True:
@@ -57,6 +56,7 @@ if '__name__' == '__main__':
             num_steps = 1
             new_pop = init_population
             while optimize:
+                print('opt')
                 new_pop = optimization_step(new_pop, num_steps)
                 best_solution = new_pop[0]
                 write_results(best_solution, entities, units)
