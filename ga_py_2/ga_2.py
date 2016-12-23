@@ -79,14 +79,12 @@ def get_filtered_adj_components_num(assignment):
 
     """
     num_units, num_entities = assignment.shape
-    assign_adj = np.empty((num_units, num_units))
+    filtered_adjacency = np.empty((num_units, num_units))
 
     # fixme do something with matrices instead of looping
     for i in range(num_units):
         assigned_ent = np.where(assignment[i] == 1)[0][0]
-        assign_adj[i] = np.multiply(assignment[:, assigned_ent], adj_mat[i])
-
-    filtered_adjacency = np.multiply(assign_adj, adj_mat)
+        filtered_adjacency[i] = np.multiply(assignment[:, assigned_ent], adj_mat[i])
 
     g = igraph.Graph.Adjacency(filtered_adjacency.tolist())
     num_comp = len(g.components())
