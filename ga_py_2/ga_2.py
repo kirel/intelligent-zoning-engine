@@ -92,8 +92,6 @@ def get_filtered_adj_components_num(assignment):
     return num_comp
 
 
-
-
 def fitness(assignment):
     """ Fitness function to be minimized.
         The fitness is quadratic in the distance between the units and entities,
@@ -123,8 +121,8 @@ def fitness(assignment):
            np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT + coherence_cost
 
 
-def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent, allowed_indices):
-    """This function mutates individuals in the population.
+def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent, allowed_indices, ind_mutation_func):
+    """This function mutates all individuals in the population.
 
     Args:
         population:
@@ -143,20 +141,57 @@ def mutation(population, sampled_population_ind, mutation_frac, hueristic_expone
     num_mutations = int(mutation_frac * num_units)
 
     for ind in sampled_population_ind:
-        # calculate mutation probability for each unit.
-        # hueristic_exponen allows mutating with high prob units with large distances.
-        fitness_vals_normed = (np.multiply(population[ind], weights).sum(axis=1) / np.max(weights))[allowed_indices]
-
-        exploration_fitness_vals = fitness_vals_normed ** hueristic_exponent
-        mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
-
-        # chose which rows to mutate based on the mutation probability
-        mutated_units = np.random.choice(allowed_indices, num_mutations, False, mutation_prob)
-        new_entities = np.random.randint(0, num_entities, len(mutated_units))
-        population[ind][mutated_units, :] = 0.
-        population[ind][mutated_units, new_entities] = 1.
+        population[ind] = ind_mutation_func(population[ind], allowed_indices, hueristic_exponent, num_mutations)
 
     return [population[ind] for ind in sampled_population_ind]
+
+
+def mutate_individual(individual, allowed_indices, hueristic_exponent, num_mutations):
+    """This function mutates a specific individual in the population
+        without changing the locked units.
+
+    Args:
+        individual:
+        allowed_indices:
+        hueristic_exponent:
+        num_mutations:
+
+    Returns: The mutated individual (in place)
+
+    """
+
+    # calculate mutation probability for each unit.
+    # hueristic_exponen allows mutating with high prob units with large distances.
+    num_units, num_entities = individual.shape
+    fitness_vals_normed = (np.multiply(individual, weights).sum(axis=1) / np.max(weights))[allowed_indices]
+
+    exploration_fitness_vals = fitness_vals_normed ** hueristic_exponent
+    mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
+
+    # chose which rows to mutate based on the mutation probability
+    mutated_units = np.random.choice(allowed_indices, num_mutations, False, mutation_prob)
+    new_entities = np.random.randint(0, num_entities, len(mutated_units))
+    individual[mutated_units, :] = 0.
+    individual[mutated_units, new_entities] = 1.
+
+    return individual
+
+
+def mutate_individual_borders(population, sampled_population_ind, mutation_frac, hueristic_exponent, allowed_indices):
+    """This function allows mutating the assignment of the units only to the assignment
+    of their neighbors
+
+    Args:
+        population:
+        sampled_population_ind:
+        mutation_frac:
+        hueristic_exponent:
+        allowed_indices:
+
+    Returns:
+
+    """
+    return
 
 
 def crossover(ind_a, ind_b, locked):
@@ -234,7 +269,7 @@ def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100
 
     sampled_population_ind = np.random.choice(np.arange(len(population)), num_mutants, True, probs)
     mutated_population = mutation(clone_population(population), sampled_population_ind, mutation_frac,
-                                  hueristic_exponent, allowed_indices)
+                                  hueristic_exponent, allowed_indices, mutate_individual)
 
     mating_population = clone_population(population) + clone_population(mutated_population)
 
