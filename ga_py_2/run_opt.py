@@ -3,12 +3,11 @@ import time
 import numpy as np
 import pandas as pd
 
-from ga_2 import optimization_step, initialize_population, entities, units
-from handle_db import get_instruction, set_assignment, get_current_assignment
+from ga_2 import optimization_step, units, entities
+from handle_db import get_instruction, set_assignment, get_input_assignment
 
 
 def write_results(best_solution, entities, units):
-
     """This function matches between entities and units ids based on
     the asignment matrix and writes it to the data base.
 
@@ -37,31 +36,27 @@ def write_results(best_solution, entities, units):
 
 
 def run():
-    population_size = 100
-
     while True:
-        print('yo')
         time.sleep(0.1)
-        optimize = get_instruction("'optimize'")[0][1]
+        instruction = get_instruction()
 
-        if optimize:
-            # print('begin')
-            init_population = initialize_population(population_size)
-            include_current_assign = get_instruction("'include_current'")[0][1]
-
-            if include_current_assign:
-                # print('getting current')
-                init_population.append(get_current_assignment())
+        if instruction == 'start':
+            init_population = [get_input_assignment()]
+            optimize = True
 
             num_steps = 1
             new_pop = init_population
+
             while optimize:
-                print('opt')
                 new_pop = optimization_step(new_pop, num_steps)
                 best_solution = new_pop[0]
                 write_results(best_solution, entities, units)
 
-                optimize = get_instruction("'optimize'")[0][1]
+                new_instruction = get_instruction()
 
-                if not optimize:
-                    print('stop')
+                if new_instruction == 'stop':
+                    optimize = False
+                elif new_instruction == 'start':
+                    num_steps = 1
+                    init_population = [get_input_assignment()]
+                    new_pop = init_population

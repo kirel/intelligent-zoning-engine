@@ -47,14 +47,17 @@ def get_instruction():
     c = conn.cursor()
 
     read_str = "SELECT * FROM " + instructions_table_name + " ORDER BY ROWID ASC LIMIT 1"
+
     delete_str = "DELETE FROM " + instructions_table_name +  \
-                 " WHERE ROWID IN (Select ROWID from " + instructions_table_name + " ASC LIMIT 1)"
+                 " WHERE ROWID IN (SELECT ROWID FROM " + instructions_table_name + " ASC LIMIT 1)"
     c.execute(read_str)
     res = c.fetchall()
 
     if res:
         res = res[0][0]
         c.execute(delete_str)
+    else:
+        res = None
 
     conn.commit()
     conn.close()
