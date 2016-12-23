@@ -172,25 +172,32 @@ server <- function(input, output, session) {
 
   ### Reactive Values
 
-  r <- reactiveValues(
+  r = reactiveValues(
     units=units, entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
     selected_entity=NONE_SELECTED,
     previous_selected_entity=NONE_SELECTED,
     selected_entity_index=NULL, # only one can be selected
     running_optimization=FALSE,
-    ga_population_future=future(NULL),
     optimization_step=0,
     previous_mouseover=NONE_SELECTED)
+  
+  # variables for R optimization implementation
+  ga = reactiveValues(
+    population_future=future(NULL),
+    population=NULL
+    )
 
   ### Interaction
 
   observeEvent(input$optimize, {
     flog.debug('Optimize button pressed')
     if (r$running_optimization) {
+      stop_optimization()
       r$running_optimization = FALSE
     } else {
       r$running_optimization = TRUE
+      start_optimization(r$units)
     }
   })
   
@@ -200,7 +207,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
-    resetOptimization()
+    reset_optimization(r$units)
   })
   
   observeEvent(input$deassign_units, {
@@ -209,7 +216,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
-    resetOptimization()
+    reset_optimization(r$units)
   })
   
   observeEvent(input$deselect_units, {
@@ -223,14 +230,14 @@ server <- function(input, output, session) {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
-    resetOptimization()
+    reset_optimization(r$units)
   })
   
   observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
-    resetOptimization()
+    reset_optimization(r$units)
   })
   
   observeEvent(input$deselect_entity, {
@@ -337,20 +344,6 @@ server <- function(input, output, session) {
       # flip clicked unit
       r$units[r$units$unit_id == clicked_unit, 'selected'] = !r$units[r$units$unit_id == clicked_unit,]$selected
       r$units[r$units$unit_id == clicked_unit, 'updated'] = T
-      
-      # FIXME don't
-      # update the solution
-      # currently_assigned_entity = r$units[r$units$unit_id == r$selected_unit,]$entity_id
-      # FIXME 3 times indexing the same thing - can this be faster?
-      # r$units[r$units$unit_id == r$selected_unit, 'entity_id'] = ifelse(r$selected_entity != currently_assigned_entity, r$selected_entity, NONE_SELECTED)
-      # r$units$updated = F
-      # r$units[r$units$unit_id == r$selected_unit, 'updated'] = T
-      # r$units[r$units$unit_id == r$selected_unit, 'selected'] = T
-      # r$assignment_rev = r$assignment_rev + 1
-
-      # cancel optimization step (which is now invalid)
-      # FIXME dont do under current model!
-      # resetOptimization()
     }
   })
 
@@ -434,81 +427,87 @@ server <- function(input, output, session) {
   })
 
   ### optimization
+  
+  ## High level functions
+  #
+  # - start_optimization(new_assignment: data.frame(unit_id, entity_id, locked))
+  #   sends the initial assignment or updated assignments after user interaction
+  # - stop_optimization() don't run the optimization any more
+  # - is_optim_solution_updated() check if there is a new solution
+  # - get_optim_solution(): list(solution=data.frame(unit_id, entity_id, locked), score=Numeric) # FIXME locked needed?
+  #   fetches the current best solution
 
-  # make sure there is at least one individual in the population
-  # see main optimization loop
-  add_current_to_ga_population = function() {
-    # select only blocks with stats and assign random schools for unassigned blocks
-    current = units %>% as.data.frame() %>%
-      filter(unit_id %in% optimizable_units) %>%
-      select(unit_id) %>%
-      left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
-      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-
-    r$ga_population = list(current)
+  start_optimization = function(assignment) {
+    # TODO talk to python
+    flog.info('(Re-)Starting optimization')
+    r$optimization_step = 0
+    # ga$population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
+    forget(mem_fitness_f)
+    reset_ga_population(assignment)
+    # actual optimization is started in main optimization loop # TODO should happen here for python
   }
   
-  resetOptimization = function() {
-    flog.info('Resetting optimization before step %s finished', r$optimization_step)
-    r$optimization_step = 0
-    # r$ga_population_future = future(NULL) # FIXME this causes a lot of futures to be calculated in parallel
-    forget(mem_fitness_f)
-    add_current_to_ga_population()
+  reset_optimization = function(assignment) {
+    if (r$running_optimization) {
+      start_optimization(assignment)
+    }
   }
-
+  
+  stop_optimization = function() {
+    # TODO talk to python
+  }
+  
+  is_optim_solution_updated = function() {
+    # TODO talk to python
+    if (resolved(ga$population_future)) {
+      future_population = value(ga$population_future)
+      !is.null(future_population)
+    } else FALSE
+  }
+  
+  get_optim_solution = function() {
+    # TODO talk to python
+    future_population = value(ga$population_future)
+    ga$population = future_population
+    fittest = ga$population[[1]]
+    score = mem_fitness_f(fittest)
+    list(solution=fittest, score=score)
+  }
+  
   # main optimization loop
   observe({
     if (r$running_optimization) {
       isolate({
-        # if there is no population to iterate on
-        if (is.null(r$ga_population)) {
-          add_current_to_ga_population()
+        # Start initial optimization step # TODO this should happen in Python automatically
+        if (resolved(ga$population_future) & is.null(value(ga$population_future))) {
+          r$optimization_step = r$optimization_step + 1
+          next_optimization_step(r$optimization_step)
         }
         
-        # if there is a resolved ga_population_future take the result and update all the things, then start a new one
-        if (resolved(r$ga_population_future)) {
+        # get updated solution
+        if (is_optim_solution_updated()) {
           flog.info('Finished optimization step %s', r$optimization_step)
-          future_population = value(r$ga_population_future)
-          if (r$optimization_step > 0 && !is.null(future_population)) {
-            r$ga_population = future_population
-            
-            fittest = r$ga_population[[1]]
-            r$fittest_fitness = c(r$fittest_fitness, mem_fitness_f(fittest))
-            
-            # update relevant values for ui updates
-            prev_entities = r$units$entity_id
-            new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(fittest, by="unit_id") %>% .$entity_id
-            r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
-            r$units$updated = r$units$updated | r$units$entity_id != prev_entities
-            
-            r$assignment_rev = r$assignment_rev + 1
-          }
-          
-          # Start new optimization step
           r$optimization_step = r$optimization_step + 1
-          heuristic_exponent = 20/r$optimization_step^(1) # TODO = 1/2?
-          mutation_fraction = max(0.001, 1-(r$optimization_step-1)/3)
-          flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', r$optimization_step, mutation_fraction, heuristic_exponent)
           
-          r$ga_population_future = future({
-            ga_select(
-              ga_breed(r$ga_population,
-                       ga_mutate=mutation_f,
-                       ga_crossover=crossover_f,
-                       fitness_f=mem_fitness_f,
-                       mutation_fraction=mutation_fraction,
-                       num_pairs = 50,
-                       num_mutants = 50,
-                       heuristic_exponent = heuristic_exponent),
-              mem_fitness_f,
-              max_population = 50)
-          })  
+          solution = get_optim_solution()
+
+          r$fittest_fitness = c(r$fittest_fitness, solution$score)
+            
+          # update relevant values for ui updates
+          prev_entities = r$units$entity_id
+          new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>%
+            left_join(solution$solution, by="unit_id") %>% .$entity_id
+          r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
+          r$units$updated = r$units$updated | r$units$entity_id != prev_entities
+            
+          r$assignment_rev = r$assignment_rev + 1
+          
+          # Start new optimization step # TODO this should happen in Python automatically
+          next_optimization_step(r$optimization_step)
         } # otherwise just skip and do nothing in this iteration
+        
       })
       invalidateLater(100, session)
-    } else {
-      r$optimization_step = 0
-      forget(mem_fitness_f)
     }
   })
 
@@ -520,6 +519,39 @@ server <- function(input, output, session) {
   })
 
   ### genetic algorithm
+  
+  ## R implementation of GA # TODO remove
+  
+  reset_ga_population = function(assignment) {
+    # select only blocks with stats and assign random schools for unassigned blocks
+    current = units %>% as.data.frame() %>%
+      filter(unit_id %in% optimizable_units) %>%
+      select(unit_id) %>%
+      left_join(assignment %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
+      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
+    
+    ga$population = list(current)
+  }
+  
+  next_optimization_step = function(step) {
+    heuristic_exponent = 20/step^(1) # TODO = 1/2?
+    mutation_fraction = max(0.001, 1-(step-1)/3)
+    flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', step, mutation_fraction, heuristic_exponent)
+    
+    ga$population_future = future({
+      ga_select(
+        ga_breed(ga$population,
+                 ga_mutate=mutation_f,
+                 ga_crossover=crossover_f,
+                 fitness_f=mem_fitness_f,
+                 mutation_fraction=mutation_fraction,
+                 num_pairs = 50,
+                 num_mutants = 50,
+                 heuristic_exponent = heuristic_exponent),
+        mem_fitness_f,
+        max_population = 50)
+    })  
+  }
   
   # randomly reassign a number of schools
   mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
