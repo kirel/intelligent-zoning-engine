@@ -92,7 +92,7 @@ def get_filtered_adj_components_num(assignment):
     return num_comp
 
 
-def fitness(assignment):
+def fitness(assignment, use_coherence_cost=0):
     """ Fitness function to be minimized.
         The fitness is quadratic in the distance between the units and entities,
         and in over and under capacity. the distance and capacity may have different weights.
@@ -115,7 +115,10 @@ def fitness(assignment):
 
     distance_val = np.sum(np.multiply(assignment, weights) ** 2)
 
-    coherence_cost = get_filtered_adj_components_num(assignment)
+    if use_coherence_cost:
+        coherence_cost = get_filtered_adj_components_num(assignment)
+    else:
+        coherence_cost = 0
 
     return distance_val * DIST_WEIGHT + np.sum(over_cap_vec) * OVER_CAPACITY_WEIGHT + \
            np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT + coherence_cost
