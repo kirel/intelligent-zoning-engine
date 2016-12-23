@@ -10,6 +10,8 @@ input_table_name = 'input'
 instructions_table_name = 'instructions'
 instruction_column = 'instruction'
 
+TIMEOUT = 60
+
 
 def create_db():
     """This function creates a data base with two tables:
@@ -21,7 +23,7 @@ def create_db():
     init_assignment = pd.read_csv('../app-data/assignment.csv')
     init_assignment.set_index('unit_id')
 
-    conn = sqlite3.connect(sqlite_file)
+    conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
 
     c = conn.cursor()
 
@@ -42,7 +44,7 @@ def get_instruction():
     Returns: instruction string
 
     """
-    conn = sqlite3.connect(sqlite_file)
+    conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
 
     c = conn.cursor()
 
@@ -76,7 +78,7 @@ def set_assignment(assignment_df, table_name=solution_table_name):
 
     """
 
-    conn = sqlite3.connect(sqlite_file)
+    conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
     assignment_df.to_sql(table_name, conn, if_exists='replace')
     conn.commit()
     conn.close()
@@ -91,7 +93,7 @@ def get_input_assignment():
 
     """
 
-    conn = sqlite3.connect(sqlite_file)
+    conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
     query = 'SELECT * FROM {tn}'.format(tn=input_table_name)
 
     assignment_df = pd.read_sql(query, conn, index_col='index')
