@@ -41,6 +41,7 @@ def run():
         instruction = get_instruction()
 
         if instruction == 'start':
+            print('start')
             init_population = [get_input_assignment()]
             optimize = True
 
@@ -48,6 +49,7 @@ def run():
             new_pop = init_population
 
             while optimize:
+                print('opt')
                 new_pop = optimization_step(new_pop, num_steps)
                 best_solution = new_pop[0]
                 write_results(best_solution, entities, units)
@@ -55,8 +57,10 @@ def run():
                 new_instruction = get_instruction()
 
                 if new_instruction == 'stop':
+                    print('stop')
                     optimize = False
                 elif new_instruction == 'start':
+                    print('restart')
                     num_steps = 1
                     init_population = [get_input_assignment()]
                     new_pop = init_population
