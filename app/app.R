@@ -849,9 +849,7 @@ server <- function(input, output, session) {
   output$report = downloadHandler(
     filename = paste0('report_', Sys.Date(), '.pdf'),
     content = function(con) {
-      # ensure write permissions, cf. http://shiny.rstudio.com/gallery/generating-reports.html
-      temp_file = file.path(tempdir(), 'assignment_report_de.Rmd')
-      file.copy('templates/assignment_report_de.Rmd', temp_file, overwrite = TRUE)
+      temp_dir = tempdir()
       # load map
       map_path = 'data/berlin.rds'
       if (file.exists(map_path)) {
@@ -861,8 +859,9 @@ server <- function(input, output, session) {
         write_rds(berlin, map_path, compress = 'gz')
       }
       isolate(rmarkdown::render(
-        temp_file,
+        'templates/assignment_report_de.Rmd',
         output_file = con,
+        intermediates_dir = temp_dir,
         envir = new.env(parent = globalenv()),  # isolate rendering
         params = list(
           map = berlin,
