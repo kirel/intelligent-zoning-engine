@@ -775,12 +775,13 @@ server <- function(input, output, session) {
   
   output$selected_entity_table = renderTable({
     if (r$selected_entity != NONE_SELECTED) {
-      d = renamed_table_data()[renamed_table_data()$Schule == r$selected_entity,] %>%
+      d = reactive_table_data()[reactive_table_data()$entity_id == r$selected_entity,] %>%
         transmute(
-          `Kapazität`=`Kapazität`,
-          Kinder=warnIfGt(Kinder, `Kapazität`, formatC(Kinder, digits=2, format='f')),
-          Auslastung=warnIfGt(Auslastung, 1.1, percent(Auslastung)),
-          `SGBII(u.65)`=percent(`SGBII(u.65)`))
+          `Kapazität` = capacity,
+          Kinder = warnIfGt(pop, capacity, formatC(pop, digits=2, format='f')),
+          Auslastung = warnIfGt(utilization, 1.1, percent(utilization)),
+          `SGBII(u.65)` = percent(sgbIIu65)
+        )
       row.names(d) = 'values'
       t(d)
     }
