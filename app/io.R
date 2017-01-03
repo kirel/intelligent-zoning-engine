@@ -14,7 +14,7 @@ generate_tbl = function(units, entities, weights, entity_filter) {
     ) %>%
     dplyr::left_join(entities %>%
                        as.data.frame() %>%
-                       dplyr::select(entity_id, capacity),
+                       dplyr::select(entity_id, capacity, LMB, ndH),
                      by = 'entity_id') %>%
     dplyr::mutate(utilization = pop / capacity)
   return(table_data)

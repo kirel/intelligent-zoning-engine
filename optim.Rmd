@@ -363,7 +363,7 @@ adjacency_df %>% filter(connected & from != to) %>% select(from, to) %>% write_c
 ```
 
 
-## Select relevant data
+## Relevante Daten auswählen
 
 ```{r}
 optim_kapas = relevant_kapas
@@ -382,7 +382,7 @@ optim_kapas$Kapa %>% sum
 optim_kids_in_blks$kids %>% sum
 ```
 
-## Naive Zuordnung: Jeder Block zur nächsten Schule
+## Naive (initiale) Zuordnung: Jeder Block zur nächsten Schule
 
 ```{r}
 solution = optim_matrix %>% mutate(BLK=optim_kids_in_blks$BLK) %>% gather(school, dist, -BLK) %>% group_by(BLK) %>% top_n(1, -dist) %>% ungroup
@@ -442,6 +442,17 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
   )
 ```
 
+## ndH und LMB-Daten (nicht offen)
+
+```{r}
+ndh_lmb = read_excel('download/LMB_ndH2015.xlsx') %>% select(
+  entity_id=BSN,
+  ndH=`Anteil ndH`,
+  LMB=`Anteil LMB`
+)
+ndh_lmb
+```
+
 
 ## Daten für die App speichern
 
@@ -461,7 +472,8 @@ solution %>% inner_join(optim_kids_in_blks, by='BLK') %>% inner_join(travel_from
 entities = subset(re_schulstand_df, spatial_name %in% relevant_schools) %>%
   rename(entity_id = spatial_name) %>%
   select(-gml_id, -spatial_alias, -spatial_type) %>%
-  inner_join(rename(relevant_kapas, capacity=Kapa), by=c('entity_id'='Schulnummer'))
+  inner_join(rename(relevant_kapas, capacity=Kapa), by=c('entity_id'='Schulnummer')) %>%
+  left_join(ndh_lmb, by=c('entity_id'))
 coordinates(entities) = ~ lon + lat
 proj4string(entities) = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 file.remove('app/data/entities.geojson')
@@ -489,10 +501,6 @@ units = units %>% sp::merge(
 file.remove('app/data/units.geojson')
 units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
 units@data %>% write_csv('app/data/units.csv')
-
-adjacency_df %>% filter(connected) %>%
-  rowwise() %>% mutate(key=sort(c(from, to))) %>% ungroup() %>%
-  group_by(key) %>% summarise(key)
 ```
 
 #### Zuordnung
