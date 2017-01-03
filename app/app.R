@@ -655,14 +655,8 @@ server <- function(input, output, session) {
 
   reactive_table_data = reactive({
     r$assignment_rev # recalculate if assignment_rev is altered
-    data = isolate(r$units) %>% as.data.frame() %>%
-      filter(entity_id != NO_ASSIGNMENT)
-
-    # alternative data for staged assignment
-    # FIXME add actual data
-    alternative = data
-    
-    table_data = data %>%
+    isolate(r$units) %>% as_data_frame() %>%
+      filter(entity_id != NO_ASSIGNMENT) %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
       summarise(
@@ -677,38 +671,19 @@ server <- function(input, output, session) {
       mutate(
         utilization=pop/capacity
       )
-
-    alternative_table_data = alternative %>%
-      left_join(weights, by=c('unit_id', 'entity_id')) %>%
-      group_by(entity_id) %>% summarise(
-        num_units=n(),
-        min_dist=min(min, na.rm=T),
-        avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
-        max_dist=max(max, na.rm=T),
-        pop=sum(population, na.rm=T),
-        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
-      ) %>%
-      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
-      mutate(
-        utilization=pop/capacity
-      )
-
-    diff = select(alternative_table_data, -entity_id) - select(table_data, -entity_id) # FIXME how is sorting ensured?
-
-    table_data['delta_utilization'] = diff$utilization
-    table_data %>%
-      select(
-        Schule=entity_id,
-        Kapazität=capacity,
-        Kinder=pop,
-        Auslastung=utilization,
-        #`ΔAusl.`=delta_utilization,
-        `SGBII(u.65)`=sgbIIu65,
-        #`Weg (min)`=min_dist,
-        `Weg (Ø)`=avg_dist,
-        `Weg (max)`=max_dist
-      )
-
+  })
+  
+  renamed_table_data = reactive({
+      d = reactive_table_data() %>%
+        select(
+          Schule=entity_id,
+          Kapazität=capacity,
+          Kinder=pop,
+          Auslastung=utilization,
+          `SGBII(u.65)`=sgbIIu65,
+          `Weg (Ø)`=avg_dist,
+          `Weg (max)`=max_dist
+        )
   })
 
   ### Outputs
@@ -740,17 +715,18 @@ server <- function(input, output, session) {
 ",
   "}")
 
+  # initial table render (see later observe for update)
   output$table = DT::renderDataTable({
-    data = isolate(reactive_table_data())
-    data %>% datatable(
+    data = isolate(renamed_table_data())
+    
+    data %>%
+      datatable(
         options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
-      #formatPercentage(c('Auslastung', 'ΔAusl.', 'SGBII(u.65)'), digits = 2) %>%
       formatPercentage(c('Auslastung', 'SGBII(u.65)'), digits = 2) %>%
       formatRound(c(
         'Kinder',
-        #'Weg (min)',
         'Weg (max)',
         'Weg (Ø)')) %>%
       formatStyle(
@@ -760,13 +736,6 @@ server <- function(input, output, session) {
         backgroundRepeat = 'no-repeat',
         backgroundPosition = 'center'
       ) %>%
-      # formatStyle(
-      #   'Weg (min)',
-      #   background = styleColorBar(data$`Weg (min)`, 'wheat'),
-      #   backgroundSize = '92% 80%',
-      #   backgroundRepeat = 'no-repeat',
-      #   backgroundPosition = 'center'
-      # ) %>%
       formatStyle(
         'Weg (max)',
         background = styleColorBar(data$`Weg (max)`, 'coral'),
@@ -780,7 +749,7 @@ server <- function(input, output, session) {
   tableProxy = DT::dataTableProxy('table')
 
   observe({
-    tableProxy %>% replaceData(reactive_table_data(), clearSelection='none')
+    tableProxy %>% replaceData(renamed_table_data(), clearSelection='none')
   })
 
   observe({
@@ -806,7 +775,7 @@ server <- function(input, output, session) {
   
   output$selected_entity_table = renderTable({
     if (r$selected_entity != NONE_SELECTED) {
-      d = reactive_table_data()[reactive_table_data()$Schule == r$selected_entity,] %>%
+      d = renamed_table_data()[renamed_table_data()$Schule == r$selected_entity,] %>%
         transmute(
           `Kapazität`=`Kapazität`,
           Kinder=warnIfGt(Kinder, `Kapazität`, formatC(Kinder, digits=2, format='f')),
