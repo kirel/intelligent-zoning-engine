@@ -3,7 +3,7 @@ source('io.R')
 
 plan(multiprocess)
 
-con <- dbConnect(RSQLite::SQLite(), "data/communication.sqlite")
+communication_db_path = "data/communication.sqlite"
 
 options(shiny.autoreload=T)
 options(shiny.host="0.0.0.0")
@@ -441,8 +441,10 @@ server <- function(input, output, session) {
     # TODO talk to python
     flog.info('(Re-)Starting optimization')
     r$optimization_step = 0
+    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
     dbWriteTable(con, 'input', assignment, overwrite=T)
     dbSendQuery(con, 'INSERT INTO instructions VALUES ("start")')
+    dbDisconnect(con)
   }
   
   reset_optimization = function(assignment) {
@@ -452,17 +454,23 @@ server <- function(input, output, session) {
   }
   
   stop_optimization = function() {
+    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
     dbSendQuery(con, 'INSERT INTO instructions VALUES ("stop")')
+    dbDisconnect(con)
   }
   
   is_optim_solution_updated = function() {
+    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
     solution_meta = dbReadTable(con, 'solution_meta', assignment)
+    dbDisconnect(con)
     !is_empty(solution_meta$timestamp) && (is.null(ga$last_timestamp) | solution_meta$timestamp > ga$last_timestamp)
   }
   
   get_optim_solution = function() {
+    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
     solution_meta = dbReadTable(con, 'solution_meta', assignment)
     solution = dbReadTable(con, 'solution', assignment)
+    dbDisconnect(con)
     ga$last_timestamp = solution_meta$timestamp
     list(solution=solution, score=solution_meta$score)
   }
