@@ -4,7 +4,7 @@ import numpy as np
 
 import time
 
-sqlite_file = 'zoning_db.sqlite'
+sqlite_file = '../app/data/communication.sqlite'
 
 solution_table_name = 'solution'
 input_table_name = 'input'
@@ -12,8 +12,9 @@ input_table_name = 'input'
 instructions_table_name = 'instructions'
 instruction_column = 'instruction'
 
-time_stamp_table_name = 'last_solution_time'
+time_stamp_table_name = 'solution_meta'
 time_column = 'timestamp'
+score_column = 'score'
 
 TIMEOUT = 60
 
@@ -74,7 +75,7 @@ def get_instruction():
     return res
 
 
-def set_assignment(assignment_df, table_name=solution_table_name):
+def set_assignment(assignment_df, score, table_name=solution_table_name):
     """This functions writes assignment_df to he data base.
     Should no be used outside this file. Should be used only to create the db.
 
@@ -86,7 +87,7 @@ def set_assignment(assignment_df, table_name=solution_table_name):
     """
 
     conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
-    assignment_df.to_sql(table_name, conn, if_exists='replace')
+    assignment_df.to_sql(table_name, conn, if_exists='replace', index=False)
     conn.commit()
     conn.close()
 
@@ -97,8 +98,9 @@ def set_assignment(assignment_df, table_name=solution_table_name):
         delete_str = "DELETE FROM " + time_stamp_table_name
         c.execute(delete_str)
         conn.commit()
-        c.execute("INSERT INTO {tn} ({cn}) VALUES ({val})". \
-                  format(tn=time_stamp_table_name, cn=time_column, val=int(time.time())))
+        c.execute("INSERT INTO {tn} ({cn1}, {cn2}) VALUES ({val1}, {val2})". \
+                  format(tn=time_stamp_table_name, cn1=time_column, cn2=score_column,
+                         val1=int(time.time()), val2=score))
         conn.commit()
         conn.close()
 
@@ -115,16 +117,18 @@ def get_input_assignment():
     conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
     query = 'SELECT * FROM {tn}'.format(tn=input_table_name)
 
-    assignment_df = pd.read_sql(query, conn, index_col='index')
+    assignment_df = pd.read_sql(query, conn)
 
     conn.close()
 
     entities = list(assignment_df['entity_id'].unique())
     units = list(assignment_df['unit_id'])
 
+    locked = np.where(assignment_df['locked'].as_matrix() > 0)[0]
+
     assign_mat = np.zeros((len(units), len(entities)))
 
     for i, entity in enumerate(assignment_df['entity_id']):
         assign_mat[i, entities.index(entity)] = 1
 
-    return assign_mat
+    return assign_mat, locked
