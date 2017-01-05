@@ -20,9 +20,9 @@ def read_data(folder, measurement='max'):
              and a weight matrix (of measurements) with a unit in each row and entity in each column
 
     """
-    df_weights = pd.read_csv(os.path.join(folder, 'weights.csv'))
-    df_entities = pd.read_csv(os.path.join(folder, 'entities.csv'))
-    df_units = pd.read_csv(os.path.join(folder, 'units.csv'))
+    df_weights = pd.read_csv(os.path.join(folder, 'weights.csv'), dtype={'unit_id':str, 'entity_id': str})
+    df_entities = pd.read_csv(os.path.join(folder, 'entities.csv'), dtype={'entity_id': str})
+    df_units = pd.read_csv(os.path.join(folder, 'units.csv'), dtype={'unit_id':str})
 
     # get units and entities ids
     units_id = df_weights['unit_id'].unique()
