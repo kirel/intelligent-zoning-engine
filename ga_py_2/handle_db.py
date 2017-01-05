@@ -1,6 +1,5 @@
 import sqlite3
 import pandas as pd
-import numpy as np
 
 import time
 
@@ -121,14 +120,4 @@ def get_input_assignment():
 
     conn.close()
 
-    entities = list(assignment_df['entity_id'].unique())
-    units = list(assignment_df['unit_id'])
-
-    locked = np.where(assignment_df['locked'].as_matrix() > 0)[0]
-
-    assign_mat = np.zeros((len(units), len(entities)))
-
-    for i, entity in enumerate(assignment_df['entity_id']):
-        assign_mat[i, entities.index(entity)] = 1
-
-    return assign_mat, locked
+    return assignment_df

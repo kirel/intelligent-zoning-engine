@@ -36,6 +36,25 @@ def write_results(best_solution, entities, units):
     return
 
 
+def get_assign_mat_from_df(assignment_df):
+
+    assignment_df = assignment_df[assignment_df['unit_id'].isin(units)]
+    locked = np.where(assignment_df['locked'].as_matrix() > 0)[0]
+
+    num_entities = len(entities)
+    num_units = len(units)
+
+    assign_mat = np.zeros((num_units, num_entities))
+
+    for i, entity in enumerate(assignment_df['entity_id']):
+        if entity in entities:
+            assign_mat[i, entities.index(entity)] = 1
+        else:
+            assign_mat[i, np.random.randint(0, num_entities)] = 1
+
+    return assign_mat, locked
+
+
 def run():
     while True:
         time.sleep(0.1)
@@ -43,7 +62,7 @@ def run():
 
         if instruction == 'start':
             print('start')
-            init_population, locked = get_input_assignment
+            init_population, locked = get_assign_mat_from_df(get_input_assignment())
             init_population = [init_population]
             optimize = True
 
@@ -64,7 +83,7 @@ def run():
                 elif new_instruction == 'start':
                     print('restart')
                     num_steps = 1
-                    init_population, locked = get_input_assignment
+                    init_population, locked = get_assign_mat_from_df(get_input_assignment())
                     init_population = [init_population]
                     new_pop = init_population
 
