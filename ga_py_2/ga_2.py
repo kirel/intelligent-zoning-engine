@@ -196,7 +196,6 @@ def mutate_individual_borders(individual, allowed_indices, hueristic_exponent, n
     Returns:
 
     """
-
     num_units, num_entities = individual.shape
 
     # calculate mutation probability for each unit.
@@ -211,7 +210,7 @@ def mutate_individual_borders(individual, allowed_indices, hueristic_exponent, n
     for unit in mutated_units:
         neighbors = np.where(adj_mat[unit] > 0)
         if neighbors[0].shape[0]:
-            neighbors_assigns = list(set([np.where(previous_state[neighbor] > 0)[0][0] for neighbor in neighbors]))
+            neighbors_assigns = list(set([np.where(previous_state[neighbor] > 0)[0][0] for neighbor in neighbors[0]]))
             new_assign = neighbors_assigns[np.random.randint(0, len(neighbors_assigns))]
         else:
             new_assign = np.random.randint(0, num_entities)
