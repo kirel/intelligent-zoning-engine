@@ -6,6 +6,9 @@ osrm/data/*
 /app/data/*
 /app/*.log
 .env
+.venv
+
+*.pyc
 
 # History files
 .Rhistory

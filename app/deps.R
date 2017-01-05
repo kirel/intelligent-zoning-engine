@@ -1,4 +1,4 @@
-requiredPackages = c('igraph', 'rgdal', 'readr', 'dplyr', 'tidyr', 'leaflet', 'htmltools',
+requiredPackages = c('igraph', 'RSQLite', 'DBI', 'rgdal', 'readr', 'dplyr', 'tidyr', 'leaflet', 'htmltools',
                      'purrr', 'colorspace', 'RColorBrewer', 'ggplot2', 'ggmap',
                      'knitr', 'rmarkdown', 'shiny', 'DT', 'memoise', 'future', 'futile.logger')
 for(p in requiredPackages){
