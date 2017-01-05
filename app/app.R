@@ -4,6 +4,22 @@ source('io.R')
 plan(multiprocess)
 
 communication_db_path = "data/communication.sqlite"
+con <- dbConnect(RSQLite::SQLite(), communication_db_path)
+
+retry = function(expr, max_tries=10) {
+  tries = 0
+  while(tries < max_tries){
+    res <- try(expr, silent=TRUE)
+    if(!is(res, 'try-error')) break
+    tries = tries + 1
+    Sys.sleep(0.1)
+  }
+  if (tries == max_tries) {
+    stop(res)
+  } else {
+    res
+  }
+}
 
 options(shiny.autoreload=T)
 options(shiny.host="0.0.0.0")
@@ -207,7 +223,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
-    reset_optimization(r$units)
+    reset_optimization(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked))
   })
   
   observeEvent(input$deassign_units, {
@@ -216,7 +232,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
     r$assignment_rev = r$assignment_rev + 1
-    reset_optimization(r$units)
+    reset_optimization(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked))
   })
   
   observeEvent(input$deselect_units, {
@@ -230,14 +246,14 @@ server <- function(input, output, session) {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
-    reset_optimization(r$units)
+    reset_optimization(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked))
   })
   
   observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
-    reset_optimization(r$units)
+    reset_optimization(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked))
   })
   
   observeEvent(input$deselect_entity, {
@@ -441,10 +457,8 @@ server <- function(input, output, session) {
     # TODO talk to python
     flog.info('(Re-)Starting optimization')
     r$optimization_step = 0
-    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
-    dbWriteTable(con, 'input', assignment, overwrite=T)
-    dbSendQuery(con, 'INSERT INTO instructions VALUES ("start")')
-    dbDisconnect(con)
+    retry(dbWriteTable(con, 'input', assignment, overwrite=T))
+    retry(dbSendQuery(con, 'INSERT INTO instructions VALUES ("start")'))
   }
   
   reset_optimization = function(assignment) {
@@ -455,22 +469,17 @@ server <- function(input, output, session) {
   
   stop_optimization = function() {
     con <- dbConnect(RSQLite::SQLite(), communication_db_path)
-    dbSendQuery(con, 'INSERT INTO instructions VALUES ("stop")')
-    dbDisconnect(con)
+    retry(dbSendQuery(con, 'INSERT INTO instructions VALUES ("stop")'))
   }
   
   is_optim_solution_updated = function() {
-    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
-    solution_meta = dbReadTable(con, 'solution_meta', assignment)
-    dbDisconnect(con)
+    solution_meta = retry(dbReadTable(con, 'solution_meta', assignment))
     !is_empty(solution_meta$timestamp) && (is.null(ga$last_timestamp) | solution_meta$timestamp > ga$last_timestamp)
   }
   
   get_optim_solution = function() {
-    con <- dbConnect(RSQLite::SQLite(), communication_db_path)
-    solution_meta = dbReadTable(con, 'solution_meta', assignment)
-    solution = dbReadTable(con, 'solution', assignment)
-    dbDisconnect(con)
+    solution_meta = retry(dbReadTable(con, 'solution_meta', assignment))
+    solution = retry(dbReadTable(con, 'solution', assignment))
     ga$last_timestamp = solution_meta$timestamp
     list(solution=solution, score=solution_meta$score)
   }
