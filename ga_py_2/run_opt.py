@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from ga_2 import optimization_step, units, entities
+from ga_2 import optimization_step, fitness, units, entities
 from handle_db import get_instruction, set_assignment, get_input_assignment
 
 
@@ -17,6 +17,7 @@ def write_results(best_solution, entities, units):
     Returns:
 
     """
+    score = np.sum(fitness(best_solution))
     assigned_entities = []
     for assign in best_solution:
         ent_idx = np.where(assign > 0)[0]
@@ -30,7 +31,7 @@ def write_results(best_solution, entities, units):
 
     df = pd.DataFrame(columns=['unit_id', 'entity_id'], data=assignment)
 
-    set_assignment(df)
+    set_assignment(df, score)
 
     return
 
@@ -42,7 +43,8 @@ def run():
 
         if instruction == 'start':
             print('start')
-            init_population = [get_input_assignment()]
+            init_population, locked = get_input_assignment
+            init_population = [init_population]
             optimize = True
 
             num_steps = 1
@@ -50,7 +52,7 @@ def run():
 
             while optimize:
                 print('opt')
-                new_pop = optimization_step(new_pop, num_steps)
+                new_pop = optimization_step(new_pop, num_steps, locked)
                 best_solution = new_pop[0]
                 write_results(best_solution, entities, units)
 
@@ -62,7 +64,8 @@ def run():
                 elif new_instruction == 'start':
                     print('restart')
                     num_steps = 1
-                    init_population = [get_input_assignment()]
+                    init_population, locked = get_input_assignment
+                    init_population = [init_population]
                     new_pop = init_population
 
                 num_steps += 1
