@@ -48,7 +48,7 @@ def get_assign_mat_from_df(assignment_df):
 
     for i, entity in enumerate(assignment_df['entity_id']):
         if entity in entities:
-            assign_mat[i, entities.index(entity)] = 1
+            assign_mat[i, list(entities).index(entity)] = 1
         else:
             assign_mat[i, np.random.randint(0, num_entities)] = 1
 
