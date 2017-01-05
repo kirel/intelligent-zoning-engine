@@ -5,7 +5,7 @@ import igraph
 
 from read_meta_data_2 import read_data
 
-units, entities, weights, capacity, units_population, adj_mat = read_data('../app_data_fixed', 'max')
+units, entities, weights, capacity, units_population, adj_mat = read_data('../app/data', 'max')
 
 OVER_CAPACITY_PENALTY = 1
 UNDER_CAPACITY_PENALTY = 1
