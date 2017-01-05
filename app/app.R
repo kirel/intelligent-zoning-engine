@@ -667,7 +667,7 @@ server <- function(input, output, session) {
         pop=sum(population, na.rm=T),
         sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
-      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
+      left_join(entities %>% as.data.frame %>% select(entity_id, capacity, ndH, LMB), by='entity_id') %>%
       mutate(
         utilization=pop/capacity
       )
@@ -780,8 +780,10 @@ server <- function(input, output, session) {
           `Kapazität` = capacity,
           Kinder = warnIfGt(pop, capacity, formatC(pop, digits=2, format='f')),
           Auslastung = warnIfGt(utilization, 1.1, percent(utilization)),
-          `SGBII(u.65)` = percent(sgbIIu65)
-        )
+          `SGBII(u.65)` = percent(sgbIIu65),
+          `LMB 2015` = percent(LMB),
+          `ndH 2015` = percent(ndH)
+          )
       row.names(d) = 'values'
       t(d)
     }

@@ -95,6 +95,28 @@ sozio: download/DL_BE_AH2016_Strukturdaten.xlsx download/RBS_OD_UWB_AGH2016.geoj
 
 download: schulen adressen einzugsbereiche LOR flaechen RBS einwohner anmeldezahlen sozio
 
+# *** proprietary data downloads
+
+download/TS_BLK_122015_ed.zip:
+	wget --no-check-certificate --ftp-user='${EGNYTE_USER}' --ftp-password='${EGNYTE_PASSWORD}' ftps://ftp-idalab.egnyte.com/Shared/03%20Projects%20%28clients%29/1607%20SNV-GTS%20-%20Analyse%20Grundschulwechsel/03%20Material%20received%20from%20client/2016-12-05%20BLK%20granularer/TS_BLK_122015_ed.zip -O $@
+
+download/TS_BLK_122015_ed.geojson: download/TS_BLK_122015_ed.zip
+	unzip -o -d download/TS_BLK_122015_ed download/TS_BLK_122015_ed.zip
+	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ download/TS_BLK_122015_ed/TS_BLK_122015_ed.shp
+	rm -rf download/TS_BLK_122015_ed
+
+download/LMB_ndH2015.xlsx:
+	wget --no-check-certificate --ftp-user='${EGNYTE_USER}' --ftp-password='${EGNYTE_PASSWORD}' ftps://ftp-idalab.egnyte.com/Shared/03%20Projects%20%28clients%29/1607%20SNV-GTS%20-%20Analyse%20Grundschulwechsel/03%20Material%20received%20from%20client/2016-12-02%20ndH%2C%20Lernmittelbefreiung%2C%20Schu%CC%88lerwanderungen/LMB_ndH2015.xlsx -O $@
+
+download/03_2_BLK_Einw_Dez2015_Alter.zip:
+	wget --no-check-certificate --ftp-user='${EGNYTE_USER}' --ftp-password='${EGNYTE_PASSWORD}' ftps://ftp-idalab.egnyte.com/Shared/03%20Projects%20%28clients%29/1607%20SNV-GTS%20-%20Analyse%20Grundschulwechsel/03%20Material%20received%20from%20client/2016-08-18%2003_2_BLK_Einw_Dez2015_Alter/03_2_BLK_Einw_Dez2015_Alter.zip -O $@
+
+download/03_2_BLK_Einw_Dez2015_Alter.geojson: download/03_2_BLK_Einw_Dez2015_Alter.zip
+	unzip -o -d download/03_2_BLK_Einw_Dez2015_Alter download/03_2_BLK_Einw_Dez2015_Alter.zip
+	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ download/03_2_BLK_Einw_Dez2015_Alter/03_2_BLK_Einw_Dez2015_Alter.shp
+	rm -rf download/03_2_BLK_Einw_Dez2015_Alter
+
+closed: download/TS_BLK_122015_ed.geojson download/LMB_ndH2015.xlsx download/03_2_BLK_Einw_Dez2015_Alter.geojson
 
 # *** Process data
 
@@ -112,6 +134,6 @@ output/route_matrix.rds: output/sampled_buildings.rds download/re_schulstand.geo
 
 process: output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
 
-optim.nb.html: optim.Rmd output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
+optim.nb.html: optim.Rmd output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds closed
 	Rscript -e "rmarkdown::render('optim.Rmd')"
 app_data: optim.nb.html

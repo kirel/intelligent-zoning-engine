@@ -1,0 +1,4 @@
+export BASIC_AUTH="/ user pw"
+
+export EGNYTE_USER="user\$\$idalab"
+export EGNYTE_PASSWORD="password"

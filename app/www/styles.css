@@ -5,7 +5,7 @@ body {
 /*** Map ***/
 
 #map-panel {
-  height: calc(100% - 260px);
+  height: calc(100% - 275px);
 }
 
 /* see http://iros.github.io/patternfills/sample_css.html */
