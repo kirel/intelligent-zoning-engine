@@ -64,3 +64,5 @@ def run():
                     num_steps = 1
                     init_population = [get_input_assignment()]
                     new_pop = init_population
+
+                num_steps += 1
