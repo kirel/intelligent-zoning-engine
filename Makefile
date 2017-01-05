@@ -127,5 +127,5 @@ venv: .venv/bin/activate
 	touch .venv/bin/activate
 
 app/data/communication.sqlite: app/communication.sql
-    sqlite3 app/data/communication.sqlite < app/communication.sql
+	sqlite3 app/data/communication.sqlite < app/communication.sql
 
