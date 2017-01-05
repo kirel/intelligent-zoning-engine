@@ -457,7 +457,7 @@ server <- function(input, output, session) {
   
   is_optim_solution_updated = function() {
     solution_meta = dbReadTable(con, 'solution_meta', assignment)
-    is.null(ga$last_timestamp) | solution_meta$timestamp > ga$last_timestamp
+    !is_empty(solution_meta$timestamp) && (is.null(ga$last_timestamp) | solution_meta$timestamp > ga$last_timestamp)
   }
   
   get_optim_solution = function() {
