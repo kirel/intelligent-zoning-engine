@@ -297,7 +297,7 @@ def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100
 
     sampled_population_ind = np.random.choice(np.arange(len(population)), num_mutants, True, probs)
     mutated_population = mutation(clone_population(population), sampled_population_ind, mutation_frac,
-                                  hueristic_exponent, allowed_indices, mutate_individual)
+                                  hueristic_exponent, allowed_indices, mutate_individual_borders)
 
     mating_population = clone_population(population) + clone_population(mutated_population)
 
