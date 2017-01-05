@@ -125,3 +125,7 @@ venv: .venv/bin/activate
 	.venv/bin/pip install -U pip
 	test -e requirements.txt && .venv/bin/pip install -r requirements.txt || echo 'Warning: No requirements to install'
 	touch .venv/bin/activate
+
+app/data/communication.sqlite: app/communication.sql
+    sqlite3 app/data/communication.sqlite < app/communication.sql
+
