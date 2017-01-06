@@ -6,4 +6,5 @@ osrm
 docs
 figs
 .git
+.venv
 .Rproj.user
