@@ -405,6 +405,7 @@ server <- function(input, output, session) {
     map = map %>%
       addCircleMarkers(
         data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+        label = ~entity_id,
         fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
       )
     return(map)
