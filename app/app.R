@@ -753,7 +753,15 @@ server <- function(input, output, session) {
   })
 
   observe({
-    tableProxy %>% selectRows(r$selected_entity_index)
+    flog.debug('r$selected_entity_index changed to %s', r$selected_entity_index)
+    currently_selected = isolate(input$table_rows_selected)
+    should_be_selected = r$selected_entity_index
+    # This comparison with the actual value is necessary because otherwise it triggers an endless loop
+    if (!is.null(currently_selected) && is.null(should_be_selected)) {
+      tableProxy %>% selectRows(NULL)
+    } else if (!is.null(currently_selected) && !is.null(should_be_selected) && currently_selected != should_be_selected) {
+      tableProxy %>% selectRows(should_be_selected)
+    }
   })
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
