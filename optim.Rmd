@@ -144,68 +144,72 @@ ggplot() + geom_path(aes(x=long, y=lat, group=group), data=lor[lor$BEZ == bez_id
 ggplot() + geom_path(aes(x=long, y=lat, group=group), data=blk[blk$BEZ == bez_id,]) + coord_map() + geom_path(aes(x=long, y=lat, group=group), data=bez[bez$BEZ == bez_id,], color='red')
 ```
 
-## Kinder im Bezirk auf Blöcke hochrechnen
+## Alter auf Blockebene
 
-Über die Einwohnerinformationen in `RBS_OD_BLK_2015_12.geojson` kann `EWR201512E_Matrix.csv` von LOR-Ebene auf Blockebene hochgerechnet werden.
-
-TODO: Stattdessen mit https://github.com/berlinermorgenpost/cogran machen?
-
-### Plot der 6-Jährigen nach `EWR201512E_Matrix.csv`
-
-Wir verwenden das mittel der 5- und 6-Jährigen.
-
-TODO neue Daten von Torres?
-TODO Prognose?
+Die Struktur der Datei in CSV-Format ist: BLK, 0,1,2,3,4,5,6,7,8,9,10,11,Gesamtergebnis.
 
 ```{r}
-relevant_ewr = einwohner_lor %>%
-  select(RAUMID, E_E05_06, E_E06_07) %>%
-  filter(RAUMID %in% relevant_lors$PLR) %>%
-  # Schnitt der 5 und 6-Jährigen
-  mutate(kids=(as.numeric(gsub(',','.',E_E06_07))+as.numeric(gsub(',','.',E_E05_06)))/2) %>% as.data.frame()
-
-data = tidy(lor[lor$BEZ == bez_id,], region='PLR') %>% inner_join(relevant_ewr, by=c('id'='RAUMID'))
-ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
-  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
+einwohner_blk = readOGR('download/03_2_BLK_Einw_Dez2015_Alter.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 ```
 
-### Plot der Einwohner auf Blockebene
-
 ```{r}
-data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(df_blk, by=c('id'='BLK')) %>% mutate(Einw=ifelse(Einw==0, NA, Einw))
-0
-ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=Einw), data=data) +
-  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>%
+  left_join(
+    einwohner_blk@data %>%
+      set_names(strsplit("BLK,0,1,2,3,4,5,6,7,8,9,10,11,Gesamt", ",")[[1]]) %>%
+      gather(age, num, -BLK, -Gesamt)
+    , by=c('id'='BLK')
+    ) %>%
+  filter(!is.na(age)) %>%
+  mutate(num=ifelse(num == 0, NA, num), age=factor(as.character(age), levels=as.character(0:11)))
+
+ggmap(map) +
+  geom_polygon(aes(x=long, y=lat, group=group, fill=num), data=data) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01)) +
+  facet_wrap(~ age, ncol = 6)
 ```
 
 
-### Hochrrechnung auf Blöcke, Strukturquote
+```{r}
+data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>%
+  left_join(
+    einwohner_blk@data %>% set_names(strsplit("BLK,0,1,2,3,4,5,6,7,8,9,10,11,Gesamt", ",")[[1]]), by=c('id'='BLK')) %>%
+  mutate(kids=(`5`+`6`)/2, kids=ifelse(kids == 0, NA, kids))
+
+data$panel = "5&6"
+
+data2 = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>%
+  left_join(
+    einwohner_blk@data %>% set_names(strsplit("BLK,0,1,2,3,4,5,6,7,8,9,10,11,Gesamt", ",")[[1]]), by=c('id'='BLK')) %>%
+  mutate(kids=(`1`+`2`+`3`+`4`+`5`+`6`)/6, kids=ifelse(kids == 0, NA, kids))
+
+data2$panel = "1-6"
+
+data = rbind(data, data2)
+
+ggmap(map) +
+  geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
+  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01)) +
+  facet_wrap(~ panel)
+```
+
+
+### Berechnung der Population der Blöcke, Strukturquote
 
 ```{r}
 Strukturquote = 0.9
 
-kids_in_blks = relevant_blks %>%
-  group_by(PLR) %>%
-  mutate(EinwRatio = Einw/sum(Einw)) %>%
-  ungroup %>%
-  left_join(relevant_ewr, by=c('PLR'='RAUMID')) %>%
-  mutate(kids = EinwRatio*kids) %>%
-  mutate(kids = Strukturquote*kids) %>% # Strukturquote
-  select(BEZ, PLR, BLK, Einw, kids) %>%
-  as.data.frame()
+kids_in_blks = einwohner_blk@data %>%
+  set_names(strsplit("BLK,0,1,2,3,4,5,6,7,8,9,10,11,Gesamt", ",")[[1]]) %>%
+  mutate(kids=(`1`+`2`+`3`+`4`+`5`+`6`)/6*Strukturquote) # FIXME only 5 and 6?
+
 row.names(kids_in_blks) = kids_in_blks$BLK
-
-data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(kids_in_blks, by=c('id'='BLK')) %>% mutate(kids=ifelse(kids==0, NA, kids), Einw=ifelse(Einw==0, NA, Einw))
-
-ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group, fill=kids), data=data) +
-  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
 ```
 
 ## Verfügbare Plätze
 
 ```{r}
 relevant_kapas = kapas %>% select(Schulnummer, Kapa=`Plätze`) %>% filter(Schulnummer %in% relevant_schools) %>% as.data.frame()
-#row.names(relevant_kapas) = relevant_kapas$Schulnummer
 ```
 
 ### Überprüfung der Summe der Kapazitäten, Anmeldungen und Kinderstatistiken
@@ -217,7 +221,6 @@ relevant_kapas %>% .$Kapa %>% sum
 kapas %>% mutate(Anmeldungen = as.numeric(gsub('[^0-9]', '', Anmeldungen))) %>% filter(Schulnummer %in% relevant_schools) %>% .$Anmeldungen %>% sum
 'Kids laut Statistik'
 kids_in_blks$kids %>% sum
-relevant_ewr$kids %>% sum
 ```
 
 ## Schulwege von Blöcken zu Schulen aggregieren
@@ -231,17 +234,29 @@ residential_buildings_blocks
 
 ```{r}
 routes_from_blks = residential_buildings_blocks %>%
-  left_join(route_matrix %>% filter(dst %in% relevant_schools), by=c('OI'='src'))
+  inner_join(route_matrix %>% filter(dst %in% relevant_schools), by=c('OI'='src'))
 head(routes_from_blks)
 ```
 
-### Plot der relevanten Blöcke (mit Wohngebäuden)
+### Plot der relevanten Blöcke (mit Wohngebäuden) und Population
+
+Welche Blöcke haben Routen( weil Wohngebäude) und eine Population (weil Kinder zwischen 1 und 6)?
 
 ```{r}
-data = tidy(blk[blk$BEZ == bez_id,], region='BLK') %>% inner_join(routes_from_blks %>% group_by(BLK) %>% summarise(n=n()), by=c('id'='BLK'))
-ggmap(map) + geom_polygon(aes(x=long, y=lat, group=group), fill='red', data=data) +
-  #geom_point(aes(x=lon, y=lat), data=rb_df, color='black', size=0.01) +
-  coord_map(xlim=c(min(data$long)-0.01, max(data$long)+0.01), ylim=c(min(data$lat)-0.01, max(data$lat)+0.01))
+polys = tidy(blk[blk$BEZ == bez_id,], region='BLK')
+routedata = polys %>% inner_join(routes_from_blks %>% group_by(BLK) %>% summarise(n=n()), by=c('id'='BLK'))
+popdata = polys %>% inner_join(kids_in_blks %>% filter(kids > 0), by=c('id'='BLK'))
+
+ggmap(map) +
+  geom_polygon(aes(x=long, y=lat, group=group), fill='blue', data=popdata) +
+  geom_polygon(aes(x=long, y=lat, group=group), fill='red', data=routedata) +
+  coord_map(xlim=c(min(routedata$long)-0.01, max(routedata$long)+0.01), ylim=c(min(routedata$lat)-0.01, max(routedata$lat)+0.01))
+
+ggmap(map) +
+  geom_polygon(aes(x=long, y=lat, group=group), fill='red', data=routedata) +
+  geom_polygon(aes(x=long, y=lat, group=group), fill='blue', data=popdata) +
+  coord_map(xlim=c(min(routedata$long)-0.01, max(routedata$long)+0.01), ylim=c(min(routedata$lat)-0.01, max(routedata$lat)+0.01))
+
 ```
 
 
@@ -367,7 +382,7 @@ adjacency_df %>% filter(connected & from != to) %>% select(from, to) %>% write_c
 
 ```{r}
 optim_kapas = relevant_kapas
-optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids) %>% mutate(kids=kids)
+optim_kids_in_blks = kids_in_blks %>% filter(kids > 0) %>% inner_join(travel_matrix, by='BLK') %>% select(BLK, kids)
 nrow(optim_kids_in_blks)
 nrow(optim_kapas)
 
@@ -487,16 +502,13 @@ entities@data %>% select(entity_id, capacity) %>% write_csv('app/data/entities.c
 units = subset(blk, BEZ == bez_id)
 
 units@data$PLR = NULL
-units@data$Einw = NULL
+#units@data$Einw = NULL
 units@data$BEZ = NULL
 units@data$unit_id = units@data$BLK
 units@data$BLK = NULL
 
-units = units %>% sp::merge(
-  optim_kids_in_blks %>%
-    left_join(sgbII_blk) %>%
-    select(unit_id=BLK, population=kids, sgbIIu65)
-  )
+units = units %>% sp::merge(sgbII_blk %>% rename(unit_id=BLK)) %>%
+  sp::merge(optim_kids_in_blks %>% select(unit_id=BLK, population=kids))
 
 file.remove('app/data/units.geojson')
 units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
