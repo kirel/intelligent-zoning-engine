@@ -17,7 +17,8 @@ params:
   NO_ASSIGNMENT: ""
   optimizable_units: ""
   crit_dist: 2000
-  crit_util: 1.1
+  min_util: 0.9
+  max_util: 1.1
 ---
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -95,7 +96,7 @@ tmp_tbl = table_data %>%
                 max_dist = as.integer(round(max_dist))) %>%
   dplyr::mutate(sgbIIu65 = tex_percent(sgbIIu65, digits = 1),
                 utilization = ifelse(
-                  utilization >= params$crit_util,
+                  utilization < params$min_util | utilization > params$max_util,
                   markup(tex_percent(utilization, digits = 1)),
                   tex_percent(utilization, digits = 1)),
                 avg_dist = ifelse(avg_dist >= params$crit_dist,

@@ -18,6 +18,9 @@ flog.debug('Logging setup complete')
 NONE_SELECTED = '__NONE_SELECTED__'
 NO_ASSIGNMENT = NONE_SELECTED
 
+MIN_UTILIZATION = 0.9
+MAX_UTILIZATION = 1.1
+
 # Load data
 units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
@@ -694,29 +697,14 @@ server <- function(input, output, session) {
 
 
   rowCallback = DT::JS("function(row, data) {",
-"
-  // if (data[4]+data[5] > 1) {
-  if (data[4] > 1.1) {
-    // $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+  "if (data[4] < ", MIN_UTILIZATION, " || data[4] > ", MAX_UTILIZATION, ") {",
+  "
     $('td:eq(4)', row).addClass('capacity-panic').removeClass('capacity-ok');
   } else {
-    // $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
     $('td:eq(4)', row).addClass('capacity-ok').removeClass('capacity-panic');
   }
 
-/*
-  if (data[5] > 0) {
-    $('td:eq(5)', row).addClass('change-up').removeClass('change-down').removeClass('no-change');
-  } else if (data[5] < 0) {
-    $('td:eq(5)', row).addClass('change-down').removeClass('change-up').removeClass('no-change');
-  } else {
-    $('td:eq(5)', row).addClass('no-change').removeClass('change-down').removeClass('change-up');
-  }
-*/
-
-  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')
-  //$('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
-",
+  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')",
   "}")
 
   # initial table render (see later observe for update)
@@ -881,6 +869,8 @@ server <- function(input, output, session) {
           units = r$units,
           entities = r$entities,
           NO_ASSIGNMENT = NO_ASSIGNMENT,
+          min_util = MIN_UTILIZATION,
+          max_util = MAX_UTILIZATION,
           colors = color_vec,
           optimizable_units = optimizable_units,
           weights = weights
