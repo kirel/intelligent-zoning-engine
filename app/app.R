@@ -655,7 +655,7 @@ server <- function(input, output, session) {
 
   reactive_table_data = reactive({
     r$assignment_rev # recalculate if assignment_rev is altered
-    isolate(r$units) %>% as_data_frame() %>%
+    isolate(r$units) %>% as.data.frame() %>%
       filter(entity_id != NO_ASSIGNMENT) %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
@@ -665,7 +665,7 @@ server <- function(input, output, session) {
         avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
         max_dist=max(max, na.rm=T),
         pop=sum(population, na.rm=T),
-        sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
+        sgbIIu65=sum(Einw*sgbIIu65, na.rm=T)/sum(Einw, na.rm=T) # FIXME population is only kids...
       ) %>%
       left_join(entities %>% as.data.frame %>% select(entity_id, capacity, ndH, LMB), by='entity_id') %>%
       mutate(
@@ -804,7 +804,7 @@ server <- function(input, output, session) {
         summarise(
           Anzahl=n(),
           Kinder=formatC(sum(population, na.rm=T), digits=2, format='f'),
-          `SGBII(u.65)`=percent(sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T))
+          `SGBII(u.65)`=percent(sum(Einw*sgbIIu65, na.rm=T)/sum(Einw, na.rm=T))
         )
       row.names(selected_units_data) = 'values'
       t(selected_units_data)
