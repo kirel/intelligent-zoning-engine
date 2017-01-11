@@ -34,7 +34,7 @@ bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAs
 
 entity_ids = unique(entities$entity_id)
 unit_ids = unique(units$unit_id)
-optimizable_units = units %>% as.data.frame %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
+optimizable_units = units %>% as.data.frame %>% filter(population > 0) %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
 
 flog.debug('Data loading complete')
 
