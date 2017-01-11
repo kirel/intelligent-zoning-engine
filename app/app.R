@@ -109,6 +109,7 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 
 ### UI
 ui <- fillPage(
+  shinyStore::initStore("store", "shinyStore-ize1"),
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
@@ -159,7 +160,8 @@ ui <- fillPage(
                                            'text/comma-separated-values',
                                            'text/plain',
                                            '.csv')
-                                )
+                                ),
+                      actionButton('reset_assignment', 'Reset', icon=icon('fast-backward'))
                   )),
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize_button', inline = TRUE),
@@ -237,6 +239,7 @@ server <- function(input, output, session) {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
     reset_optimization(r$units)
   })
   
@@ -244,6 +247,7 @@ server <- function(input, output, session) {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
     reset_optimization(r$units)
   })
   
@@ -252,6 +256,29 @@ server <- function(input, output, session) {
     r$selected_entity = NONE_SELECTED
     r$selected_entity_index = NULL
   }) 
+  
+  ### Localstorage of assignment
+  
+  observeEvent(input$reset_assignment, {
+    shinyStore::updateStore(session, "assignment", NULL)
+    r$units = units
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(r$assignment_rev, {
+    if (r$assignment_rev == 0) {
+      try(isolate({
+        assignment = input$store$assignment %>% charToRaw %>% unserialize
+        stopifnot(c('unit_id', 'entity_id', 'locked') %in% colnames(assignment))
+        assignemnt = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(assignment)
+        r$units$entity_id = ifelse(is.na(assignment$entity_id), r$units$entity_id, assignment$entity_id)
+        r$units$locked = ifelse(is.na(assignment$locked), r$units$locked, assignment$locked)
+      }))
+    }
+    shinyStore::updateStore(session, "assignment", r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked) %>% serialize(NULL, ascii=T) %>% rawToChar)
+  })
+  
+  ### load assignment
 
   observeEvent(input$readAssignment, {
     flog.debug('upload button pressed')

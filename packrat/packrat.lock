@@ -694,6 +694,16 @@ Hash: b3151540f7d02b2b455bbc1c4d75f5e2
 Requires: R6, digest, htmltools, httpuv, jsonlite, mime, sourcetools,
     xtable
 
+Package: shinyStore
+Source: github
+Version: 0.1.0
+Hash: 5240bc3321d03ccd392b769513b35f19
+Requires: RJSONIO, shiny
+GithubRepo: shinyStore
+GithubUsername: trestletech
+GithubRef: master
+GithubSha1: d7e36d57284df01edb6f6815ff1d762ffa77742e
+
 Package: sourcetools
 Source: CRAN
 Version: 0.1.5
