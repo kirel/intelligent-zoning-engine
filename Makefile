@@ -113,7 +113,7 @@ download/03_2_BLK_Einw_Dez2015_Alter.zip:
 
 download/03_2_BLK_Einw_Dez2015_Alter.geojson: download/03_2_BLK_Einw_Dez2015_Alter.zip
 	unzip -o -d download/03_2_BLK_Einw_Dez2015_Alter download/03_2_BLK_Einw_Dez2015_Alter.zip
-	ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON $@ download/03_2_BLK_Einw_Dez2015_Alter/03_2_BLK_Einw_Dez2015_Alter.shp
+	ogr2ogr -s_srs EPSG:3006 -t_srs WGS84 -f geoJSON $@ download/03_2_BLK_Einw_Dez2015_Alter/03_2_BLK_Einw_Dez2015_Alter.shp
 	rm -rf download/03_2_BLK_Einw_Dez2015_Alter
 
 closed: download/TS_BLK_122015_ed.geojson download/LMB_ndH2015.xlsx download/03_2_BLK_Einw_Dez2015_Alter.geojson
