@@ -9,7 +9,10 @@ options(shiny.host="0.0.0.0")
 options(warn=-1)
 
 flog.threshold(DEBUG)
-flog.appender(appender.file('optimization.log'), name='optimization')
+OPTIMIZATION_LOG_FILE = Sys.getenv('OPTIMIZATION_LOG_FILE')
+if (OPTIMIZATION_LOG_FILE != "") {
+  flog.appender(appender.file('optimization.log'), name='optimization')
+}
 flog.debug('Logging setup complete')
 
 NONE_SELECTED = '__NONE_SELECTED__'
