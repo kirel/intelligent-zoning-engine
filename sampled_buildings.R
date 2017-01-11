@@ -17,7 +17,7 @@ alkis = readOGR('download/re_alkis_tatsaechlichenutzungflaechen.geojson', layer 
 blk$area = sapply(slot(blk, "polygons"), slot, "area")
 residential = alkis[alkis$AAA.Beschreibung == 'AX_Wohnbauflaeche' | grepl('Wohnen', alkis$Funktion_bezeichnung),]
 
-residential_buildings = HKO_2015[!is.na(over(HKO_2015, residential)$AAA.Beschreibung),]
+residential_buildings = HKO_2015 #[!is.na(over(HKO_2015, residential)$AAA.Beschreibung),] # FIXME no residential check :(
 
 residential_buildings_df = residential_buildings %>% as.data.frame() %>%
   select(OI, long=coords.x1, lat=coords.x2) %>%
