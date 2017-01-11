@@ -246,6 +246,7 @@ server <- function(input, output, session) {
   observeEvent(input$deselect_entity, {
     flog.debug('Deselect button pressed')
     r$selected_entity = NONE_SELECTED
+    r$selected_entity_index = NULL
   }) 
 
   observeEvent(input$readAssignment, {
