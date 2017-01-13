@@ -1,11 +1,12 @@
 body {
   min-width: 1200px;
+  
 }
 
 /*** Map ***/
 
 #map-panel {
-  height: calc(100% - 260px);
+  height: calc(100% - 400px);
 }
 
 /* see http://iros.github.io/patternfills/sample_css.html */
@@ -17,7 +18,162 @@ body {
 
 #table-panel {
   height: 100%; overflow: scroll;
+  background-color:lightgrey;
+  border-spacing:10px;
 }
+
+#table-panel th {
+  border-bottom-color:#a0a0a0;
+}
+
+#table-panel thead {
+  background-color:white;
+
+}
+#table-panel tfoot {
+  background-color:white;
+
+}
+
+#table-panel td {
+  background-color:#ffffff;
+  border-bottom: 5px solid;
+  border-top: 5px solid;
+  border-color:lightgrey;
+  ;
+  /*border-bottom: 10px solid white;*/
+}
+
+#table-panel tr td {
+  /*border-top-color:10px solid black;*/
+     
+}
+ 
+#table-panel tr td:first-child {
+  /*border-top-color:10px solid black;*/
+  border-left:8px solid lightgrey;
+
+  -moz-border-radius-topleft: 11px;
+  -moz-border-radius-bottomleft: 11px;
+  -webkit-border-top-left-radius: 11px;
+  -webkit-border-bottom-left-radius: 11px;
+   
+}
+
+#table-panel tr td:last-child {
+  /*border-top-color:10px solid black;*/
+  border-right:5px solid lightgrey;
+
+  -moz-border-radius-topright: 8px;
+  -moz-border-radius-bottomright: 8px;
+  -webkit-border-top-right-radius: 8px;
+  -webkit-border-bottom-right-radius: 8px;
+   
+} 
+
+#detail--units{
+  background-color:white;
+  padding:50px 5px 0px 20px;
+  -moz-border-radius: 3px;
+  -webkit-border-radius: 3px;
+  border-left:3px solid lightgrey;
+  border-top:3px solid lightgrey;
+  border-right:3px solid lightgrey;
+  height:455px;
+}
+
+#detail--units h4 {
+  font-family:sans-serif;
+  font-size: 1.4em;
+  color:#585858;
+  margin:0px 0px 40px 5px;
+}
+
+#detail--units--controls{
+  padding-bottom:10px;
+}
+
+#selected_units_table tr {
+  font-family:sans-serif;
+  color:#676767;
+
+}
+
+#selected_units_table tr td:first-child {
+  font-family:sans-serif;
+  font-size:1.2em;
+  font-weight:300;
+  color:#676767; 
+  padding:5px 0px 5px 0px;
+}
+#selected_units_table tr td:nth-child(2) {
+  font-family:sans-serif;
+  font-size:1.1em;
+  font-weight:500;
+  color:#676767;
+  padding:5px 0px 5px 0px;
+}
+
+#detail--entity{
+  background-color:white;
+  padding:50px 5px 0px 20px;
+  -moz-border-radius: 3px;
+  -webkit-border-radius: 3px;
+  border-left:3px solid lightgrey;
+  border-top:3px solid lightgrey;
+  border-right:3px solid lightgrey;
+  height:455px;
+}
+
+#detail--entity h4 {
+  font-family:sans-serif;
+  font-size: 1.4em;
+  color:#585858;
+  margin:0px 0px 40px 5px;
+}
+
+
+#selected_entity_table tr {
+  font-family:sans-serif;
+  color:#676767;
+
+}
+
+#selected_entity_table tr td:first-child {
+  font-family:sans-serif;
+  font-size:1.2em;
+  font-weight:300;
+  color:#676767; 
+  padding:5px 0px 5px 0px;
+}
+#selected_entity_table tr td:nth-child(2) {
+  font-family:sans-serif;
+  font-size:1.1em;
+  font-weight:500;
+  color:#676767;
+  padding:5px 0px 5px 0px;
+}
+
+#deselect_entity{
+  
+}
+
+.fa-remove{
+  color:#afafaf;
+  font-size: 20px;
+
+}
+
+#detail--units--controls{
+  
+}
+
+#deselect-entity{
+  
+}
+
+
+
 
 .capacity-ok { color: green; }
 .capacity-ok .glyphicon-remove { display: none; }
