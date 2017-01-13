@@ -82,6 +82,12 @@ Source: CRAN
 Version: 1.3-0
 Hash: fb672e20eb6f3010a3639f855d8ef6de
 
+Package: RSQLite
+Source: CRAN
+Version: 1.1-1
+Hash: 948c184b76f9a4f8aa519ccda09e9069
+Requires: BH, DBI, Rcpp, memoise, plogr
+
 Package: Rcpp
 Source: CRAN
 Version: 0.12.8
@@ -177,6 +183,16 @@ Package: crayon
 Source: CRAN
 Version: 1.3.2
 Hash: 576a9d297a567d6a5ebd164ca5221590
+
+Package: crosstalk
+Source: github
+Version: 1.0.1
+Hash: 1a3a6c072c33a57ed2b334ececa9c9a6
+Requires: R6, ggplot2, htmltools, jsonlite, lazyeval, shiny
+GithubRepo: crosstalk
+GithubUsername: rstudio
+GithubRef: master
+GithubSha1: 6a36da10f03d463ecb427fea649571be84b9bb43
 
 Package: curl
 Source: CRAN
@@ -278,21 +294,21 @@ Package: ggmap
 Source: CRAN
 Version: 2.6.1
 Hash: 3e5545418aab1ad8e47c218236dd4f0b
-Requires: digest, jpeg, png, proto, rjson, plyr, mapproj, RgoogleMaps,
-    scales, geosphere, reshape2, ggplot2
+Requires: RgoogleMaps, digest, geosphere, ggplot2, jpeg, mapproj, plyr,
+    png, proto, reshape2, rjson, scales
 
 Package: ggplot2
 Source: CRAN
-Version: 2.2.0
-Hash: 78c14285e0c114542d051a09bd552472
-Requires: MASS, digest, gtable, lazyeval, plyr, tibble, scales,
-    reshape2
+Version: 2.2.1
+Hash: 46e5cb78836848aa44655e577433f54b
+Requires: MASS, digest, gtable, lazyeval, plyr, reshape2, scales,
+    tibble
 
 Package: ggrepel
 Source: CRAN
 Version: 0.6.5
 Hash: 47ab5960c50bda9a2500e5d523a5dfca
-Requires: Rcpp, scales, ggplot2
+Requires: Rcpp, ggplot2, scales
 
 Package: git2r
 Source: CRAN
@@ -338,10 +354,14 @@ Hash: 49415ab4718e9d37c7ddf74988493c23
 Requires: Rcpp, digest
 
 Package: htmlwidgets
-Source: CRAN
+Source: github
 Version: 0.8
-Hash: e7a3c80acddc2412f96d616949e40bb8
+Hash: 100cc14044f308392a5363cb73fbebae
 Requires: htmltools, jsonlite, yaml
+GithubRepo: htmlwidgets
+GithubUsername: ramnathv
+GithubRef: master
+GithubSha1: 3ce9f90bac70a6c9b15a546b4729ec5992035b65
 
 Package: httpuv
 Source: CRAN
@@ -379,8 +399,8 @@ Hash: 189af3df9864c6aa8546033f08ba9358
 
 Package: jsonlite
 Source: CRAN
-Version: 1.1
-Hash: 86d4b85b84421a4815f1bb4872e30ef4
+Version: 1.2
+Hash: 3a193a612cae6814719ed523f7e7cf44
 
 Package: knitr
 Source: CRAN
@@ -415,11 +435,15 @@ Version: 0.2.0
 Hash: 3d6e7608e65bbf5cb170dab1e3c9ed8b
 
 Package: leaflet
-Source: CRAN
-Version: 1.0.1
-Hash: 749ac8c776a57c686ab8c90b5a6818fb
-Requires: RColorBrewer, base64enc, htmltools, htmlwidgets, magrittr,
-    markdown, png, raster, scales, sp
+Source: github
+Version: 1.0.2.9010
+Hash: aa828ae8a17f73e1dbf65bdf17a559d5
+Requires: RColorBrewer, base64enc, crosstalk, htmltools, htmlwidgets,
+    magrittr, markdown, png, raster, scales, sp
+GithubRepo: leaflet
+GithubUsername: rstudio
+GithubRef: master
+GithubSha1: 7a8f0e78965767cebb0ce3d921377b96fe9c44c8
 
 Package: listenv
 Source: CRAN
@@ -526,6 +550,10 @@ Version: 0.22
 Hash: 2e5fc2a6b7eaeb1e1d397a8dc5f54480
 Requires: codetools, digest, registry, stringr, xtable
 
+Package: plogr
+Source: CRAN
+Version: 0.1-1
+
 Package: plyr
 Source: CRAN
 Version: 1.8.4
@@ -609,13 +637,13 @@ Requires: Rcpp, plyr, stringr
 Package: rgdal
 Source: CRAN
 Version: 1.2-4
-Hash: 2856f9c38c813ff9c94104f1a5ed8ea4
+Hash: c0137074e27b5d7363900430cca8c205
 Requires: sp
 
 Package: rgeos
 Source: CRAN
 Version: 0.3-21
-Hash: d34cb398be8b8c4936c8afe99f1cea80
+Hash: d709050e5d1b884648e7121dfb0b9941
 Requires: sp
 
 Package: rjson
@@ -657,7 +685,7 @@ Package: scales
 Source: CRAN
 Version: 0.4.1
 Hash: cf658953d600d4736b058df1558df481
-Requires: RColorBrewer, Rcpp, dichromat, labeling, plyr, munsell
+Requires: RColorBrewer, Rcpp, dichromat, labeling, munsell, plyr
 
 Package: shiny
 Source: CRAN
@@ -666,6 +694,16 @@ Hash: b3151540f7d02b2b455bbc1c4d75f5e2
 Requires: R6, digest, htmltools, httpuv, jsonlite, mime, sourcetools,
     xtable
 
+Package: shinyStore
+Source: github
+Version: 0.1.0
+Hash: 5240bc3321d03ccd392b769513b35f19
+Requires: RJSONIO, shiny
+GithubRepo: shinyStore
+GithubUsername: trestletech
+GithubRef: master
+GithubSha1: d7e36d57284df01edb6f6815ff1d762ffa77742e
+
 Package: sourcetools
 Source: CRAN
 Version: 0.1.5
@@ -673,8 +711,8 @@ Hash: 04ddeb1c288302222562326a471e2945
 
 Package: sp
 Source: CRAN
-Version: 1.2-3
-Hash: 50e24e98f39f1524698c2ccb3b30fdcf
+Version: 1.2-4
+Hash: 4ffcf86fffee89e7b859f760528dd545
 Requires: lattice
 
 Package: stplanr

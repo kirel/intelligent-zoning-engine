@@ -9,6 +9,16 @@ body {
   height: calc(100% - 400px);
 }
 
+#map-panel .capacity-indicator {
+  opacity: 0;
+}
+
+#map-panel .capacity-indicator.warning {
+  stroke: red;
+  stroke-width: 5;
+  opacity: 0.5;
+}
+
 /* see http://iros.github.io/patternfills/sample_css.html */
 #svg-patterns { position: absolute; }
 .unlocked { fill: transparent; }

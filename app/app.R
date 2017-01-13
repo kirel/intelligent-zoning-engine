@@ -9,11 +9,17 @@ options(shiny.host="0.0.0.0")
 options(warn=-1)
 
 flog.threshold(DEBUG)
-flog.appender(appender.file('optimization.log'), name='optimization')
+OPTIMIZATION_LOG_FILE = Sys.getenv('OPTIMIZATION_LOG_FILE')
+if (OPTIMIZATION_LOG_FILE != "") {
+  flog.appender(appender.file('optimization.log'), name='optimization')
+}
 flog.debug('Logging setup complete')
 
 NONE_SELECTED = '__NONE_SELECTED__'
 NO_ASSIGNMENT = NONE_SELECTED
+
+MIN_UTILIZATION = 0.9
+MAX_UTILIZATION = 1.1
 
 # Load data
 units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
@@ -34,7 +40,7 @@ bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAs
 
 entity_ids = unique(entities$entity_id)
 unit_ids = unique(units$unit_id)
-optimizable_units = units %>% as.data.frame %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
+optimizable_units = units %>% as.data.frame %>% filter(population > 0) %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
 
 flog.debug('Data loading complete')
 
@@ -67,6 +73,7 @@ entities$selected = F
 # Remark: There is no entities$updated because they have to be redrawn anyway
 entities$highlighted = T # highlight when selected
 entities$hovered = F
+entities$warning = F
 units$selected = F # selected units can be reassigned, locked, etc
 units$highlighted = T # highlight units when assigned entity is selected
 units$locked = F
@@ -102,6 +109,7 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 
 ### UI
 ui <- fillPage(
+  shinyStore::initStore("store", "shinyStore-ize1"),
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
@@ -152,7 +160,8 @@ ui <- fillPage(
                                            'text/comma-separated-values',
                                            'text/plain',
                                            '.csv')
-                                )
+                                ),
+                      actionButton('reset_assignment', 'Reset', icon=icon('fast-backward'))
                   )),
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize_button', inline = TRUE),
@@ -230,6 +239,7 @@ server <- function(input, output, session) {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
     reset_optimization(r$units)
   })
   
@@ -237,13 +247,38 @@ server <- function(input, output, session) {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
+    r$assignment_rev = r$assignment_rev + 1
     reset_optimization(r$units)
   })
   
   observeEvent(input$deselect_entity, {
     flog.debug('Deselect button pressed')
     r$selected_entity = NONE_SELECTED
+    r$selected_entity_index = NULL
   }) 
+  
+  ### Localstorage of assignment
+  
+  observeEvent(input$reset_assignment, {
+    shinyStore::updateStore(session, "assignment", NULL)
+    r$units = units
+    r$assignment_rev = r$assignment_rev + 1
+  })
+  
+  observeEvent(r$assignment_rev, {
+    if (r$assignment_rev == 0) {
+      try(isolate({
+        assignment = input$store$assignment %>% charToRaw %>% unserialize
+        stopifnot(c('unit_id', 'entity_id', 'locked') %in% colnames(assignment))
+        assignemnt = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(assignment)
+        r$units$entity_id = ifelse(is.na(assignment$entity_id), r$units$entity_id, assignment$entity_id)
+        r$units$locked = ifelse(is.na(assignment$locked), r$units$locked, assignment$locked)
+      }))
+    }
+    shinyStore::updateStore(session, "assignment", r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked) %>% serialize(NULL, ascii=T) %>% rawToChar)
+  })
+  
+  ### load assignment
 
   observeEvent(input$readAssignment, {
     flog.debug('upload button pressed')
@@ -395,9 +430,20 @@ server <- function(input, output, session) {
         )
     }
     # always draw entities on top
+    capacity_warning = r$entities %>% as.data.frame() %>%
+      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
+      mutate(utilization=pop/capacity, warning=utilization < MIN_UTILIZATION | utilization > MAX_UTILIZATION) %>% .$warning
+    r$entities$warning = capacity_warning
     map = map %>%
       addCircleMarkers(
+        data=r$entities, group='entities-warning', layerId=~paste0('entity_warning_', entity_id),
+        options=pathOptions(pointerEvents='none', className=~ifelse(warning, 'capacity-indicator warning', 'capacity-indicator nowarning')),
+        fillOpacity=NULL, color=NULL, opacity=NULL, fillColor=NULL,
+        weight=2, radius=7
+      ) %>%
+      addCircleMarkers(
         data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+        label = ~entity_id,
         fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
       )
     return(map)
@@ -690,29 +736,14 @@ server <- function(input, output, session) {
 
 
   rowCallback = DT::JS("function(row, data) {",
-"
-  // if (data[4]+data[5] > 1) {
-  if (data[4] > 1.1) {
-    // $('td:eq(4), td:eq(5)', row).addClass('capacity-panic').removeClass('capacity-ok');
+  "if (data[4] < ", MIN_UTILIZATION, " || data[4] > ", MAX_UTILIZATION, ") {",
+  "
     $('td:eq(4)', row).addClass('capacity-panic').removeClass('capacity-ok');
   } else {
-    // $('td:eq(4), td:eq(5)', row).addClass('capacity-ok').removeClass('capacity-panic');
     $('td:eq(4)', row).addClass('capacity-ok').removeClass('capacity-panic');
   }
 
-/*
-  if (data[5] > 0) {
-    $('td:eq(5)', row).addClass('change-up').removeClass('change-down').removeClass('no-change');
-  } else if (data[5] < 0) {
-    $('td:eq(5)', row).addClass('change-down').removeClass('change-up').removeClass('no-change');
-  } else {
-    $('td:eq(5)', row).addClass('no-change').removeClass('change-down').removeClass('change-up');
-  }
-*/
-
-  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')
-  //$('td:eq(5)', row).prepend('<i class=\"glyphicon glyphicon-arrow-up\"></i><i class=\"glyphicon glyphicon-arrow-down\"></i> ')
-",
+  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')",
   "}")
 
   # initial table render (see later observe for update)
@@ -753,7 +784,15 @@ server <- function(input, output, session) {
   })
 
   observe({
-    tableProxy %>% selectRows(r$selected_entity_index)
+    flog.debug('r$selected_entity_index changed to %s', r$selected_entity_index)
+    currently_selected = isolate(input$table_rows_selected)
+    should_be_selected = r$selected_entity_index
+    # This comparison with the actual value is necessary because otherwise it triggers an endless loop
+    if (!is.null(currently_selected) && is.null(should_be_selected)) {
+      tableProxy %>% selectRows(NULL)
+    } else if (!is.null(currently_selected) && !is.null(should_be_selected) && currently_selected != should_be_selected) {
+      tableProxy %>% selectRows(should_be_selected)
+    }
   })
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
@@ -775,12 +814,13 @@ server <- function(input, output, session) {
   
   output$selected_entity_table = renderTable({
     if (r$selected_entity != NONE_SELECTED) {
-      d = renamed_table_data()[renamed_table_data()$Schule == r$selected_entity,] %>%
+      d = reactive_table_data()[reactive_table_data()$entity_id == r$selected_entity,] %>%
         transmute(
-          `Kapazität`=`Kapazität`,
-          Kinder=warnIfGt(Kinder, `Kapazität`, formatC(Kinder, digits=2, format='f')),
-          Auslastung=warnIfGt(Auslastung, 1.1, percent(Auslastung)),
-          `SGBII(u.65)`=percent(`SGBII(u.65)`))
+          `Kapazität` = capacity,
+          Kinder = warnIfGt(pop, capacity, formatC(pop, digits=2, format='f')),
+          Auslastung = warnIfGt(utilization, 1.1, percent(utilization)),
+          `SGBII(u.65)` = percent(sgbIIu65)
+        )
       row.names(d) = 'values'
       t(d)
     }
@@ -849,9 +889,7 @@ server <- function(input, output, session) {
   output$report = downloadHandler(
     filename = paste0('report_', Sys.Date(), '.pdf'),
     content = function(con) {
-      # ensure write permissions, cf. http://shiny.rstudio.com/gallery/generating-reports.html
-      temp_file = file.path(tempdir(), 'assignment_report_de.Rmd')
-      file.copy('templates/assignment_report_de.Rmd', temp_file, overwrite = TRUE)
+      temp_dir = tempdir()
       # load map
       map_path = 'data/berlin.rds'
       if (file.exists(map_path)) {
@@ -861,14 +899,17 @@ server <- function(input, output, session) {
         write_rds(berlin, map_path, compress = 'gz')
       }
       isolate(rmarkdown::render(
-        temp_file,
+        'templates/assignment_report_de.Rmd',
         output_file = con,
+        intermediates_dir = temp_dir,
         envir = new.env(parent = globalenv()),  # isolate rendering
         params = list(
           map = berlin,
           units = r$units,
           entities = r$entities,
           NO_ASSIGNMENT = NO_ASSIGNMENT,
+          min_util = MIN_UTILIZATION,
+          max_util = MAX_UTILIZATION,
           colors = color_vec,
           optimizable_units = optimizable_units,
           weights = weights
