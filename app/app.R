@@ -657,7 +657,7 @@ server <- function(input, output, session) {
       filter(entity_id == to_entity_id)
     
     optimum_connected_components = length(entity_ids)
-    connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))
+    connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
     coherence_cost = connected_components/optimum_connected_components
     
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
