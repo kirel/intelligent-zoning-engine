@@ -538,6 +538,9 @@ server <- function(input, output, session) {
           solution = get_optim_solution()
 
           r$fittest_fitness = c(r$fittest_fitness, solution$score)
+          
+          # TODO remove
+          mem_fitness_f(solution$solution, verbose=TRUE)
             
           # update relevant values for ui updates
           prev_entities = r$units$entity_id
@@ -640,7 +643,7 @@ server <- function(input, output, session) {
     list(child_a, child_b)
   }
 
-  fitness_f = function(individual) {
+  fitness_f = function(individual, verbose=FALSE) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 1
     DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
@@ -653,7 +656,9 @@ server <- function(input, output, session) {
       inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
       filter(entity_id == to_entity_id)
     
-    coherence_cost = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))/length(entity_ids)
+    optimum_connected_components = length(entity_ids)
+    connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))
+    coherence_cost = connected_components/optimum_connected_components
     
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
@@ -679,18 +684,18 @@ server <- function(input, output, session) {
         under_capacity_penalty = UNDER_CAPACITY_WEIGHT*under_capacity_penalty
         ) %>%
       (function(x) {
-        #if (runif(1)<0) {
-        if (runif(1)<0.01) {
-          flog.debug('Random sample error components', name='optimization')
+        if (verbose) {
+          flog.debug('*** error components', name='optimization')
           flog.debug('Avg distance error: %s', x$avg, name='optimization')
           flog.debug('Max distance error: %s', x$max, name='optimization')
           flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
           flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
-          flog.debug('Coherence cost: %s', coherence_cost, name='optimization')
+          flog.debug('Coherence cost: %s (%s connected components/%s schools)', coherence_cost, connected_components, optimum_connected_components, name='optimization')
+          flog.debug('***', name='optimization')
         }
         x
       }) %>%
-      mutate(fitness = avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
+      mutate(fitness = max + avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
   }
 
   mem_fitness_f = memoise(fitness_f)
