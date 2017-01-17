@@ -439,13 +439,18 @@ server <- function(input, output, session) {
     capacity_warning = r$entities %>% as.data.frame() %>%
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
       mutate(utilization=pop/capacity, warning=utilization < MIN_UTILIZATION | utilization > MAX_UTILIZATION) %>% .$warning
-    r$entities$warning = capacity_warning
+    warning_radius = r$entities %>% as.data.frame() %>%
+      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
+      mutate(utilization=pop/capacity,
+             utilization_diff=abs(utilization-1),
+             warning_radius=pmax(0, pmin(10, scales::rescale(utilization_diff, c(5, 10), c(0.1, 1))))) %>%
+      .$warning_radius
     map = map %>%
       addCircleMarkers(
         data=r$entities, group='entities-warning', layerId=~paste0('entity_warning_', entity_id),
-        options=pathOptions(pointerEvents='none', className=~ifelse(warning, 'capacity-indicator warning', 'capacity-indicator nowarning')),
+        options=pathOptions(pointerEvents='none', className=~ifelse(capacity_warning, 'capacity-indicator warning', 'capacity-indicator nowarning')),
         fillOpacity=NULL, color=NULL, opacity=NULL, fillColor=NULL,
-        weight=2, radius=7
+        weight=2, radius=~warning_radius
       ) %>%
       addCircleMarkers(
         data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
