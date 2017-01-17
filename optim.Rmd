@@ -487,7 +487,7 @@ units = units %>% sp::merge(
   )
 
 file.remove('app/data/units.geojson')
-units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
+units %>% writeOGR('app/data/units.geojson', layer="units", driver="GeoJSON", check_exists=F)
 units@data %>% write_csv('app/data/units.csv')
 ```
 
