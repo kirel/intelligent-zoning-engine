@@ -173,6 +173,9 @@ ui <- fillPage(
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize_button', inline = TRUE),
                       plotOutput('fitness', height = '120px')
+                  )),
+                  tabPanel("Über das Projekt", div(id='about',
+                    includeMarkdown("about.md")
                   ))
       )
     ),

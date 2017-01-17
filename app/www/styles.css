@@ -84,3 +84,15 @@ body {
 #selected_entity_table .warning {
     color: red;
 }
+
+#about {
+  padding: 5px;
+}
+
+#about--logos {
+  text-align: center;
+}
+
+#about--logos img {
+  max-height: 100px;
+}
