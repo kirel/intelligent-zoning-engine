@@ -103,9 +103,22 @@ tmp_tbl = table_data %>%
                                   markup(avg_dist), avg_dist),
                 max_dist = ifelse(max_dist >= params$crit_dist,
                                   markup(max_dist), max_dist))
+tbl_summary = table_data %>% summarise(
+  entity_id="Gesamt",
+  sum_capacity=sum(capacity),
+  sum_pop=sum(pop),
+  utilization=tex_percent(sum_pop/sum_capacity),
+  sgbIIu65='-',
+  avg_dist=sum(pop*avg_dist)/sum(pop),
+  max_dist=as.integer(round(max(max_dist)))
+)
+colnames(tbl_summary) = colnames(tmp_tbl)
+tmp_tbl = rbind(tmp_tbl, tbl_summary)
+
 colnames(tmp_tbl) = header
 print(xtable::xtable(tmp_tbl, digits = 1, align = c("l", "l", rep("r", times = 6))),
       booktabs = TRUE, include.rownames = FALSE, comment = FALSE,
+      hline.after = c(-1, 0, nrow(tmp_tbl) - 1, nrow(tmp_tbl)),
       sanitize.text.function = identity)
 ```
 
