@@ -67,7 +67,7 @@ einwohner_lor = read_delim('download/EWR201512E_Matrix.csv', delim=';')
 ## Überprüfung der Vollständigkeit der Daten über Anmeldezahlen/Kapazitäten
 
 ```{r}
-re_schulstand_df = re_schulstand %>% as.data.frame() %>% rename(lon=coords.x1, lat=coords.x2)
+re_schulstand_df = re_schulstand %>% as.data.frame() %>% rename(lon=coords.x1, lat=coords.x2) %>% cbind(over(re_schulstand, lor))
 re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% mutate(BEZIRK=enc2utf8(as.character(BEZIRK))) %>%
   group_by(BEZIRK) %>% summarise(`Anzahl Schulen` = n()) %>%
   rename(Bezirk=BEZIRK) %>% left_join(kapas %>% group_by(Bezirk) %>% summarise(`Mit Kapazität` = n()))
