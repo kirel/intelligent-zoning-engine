@@ -10,6 +10,7 @@ options(warn=-1)
 
 flog.threshold(DEBUG)
 OPTIMIZATION_LOG_FILE = Sys.getenv('OPTIMIZATION_LOG_FILE')
+DEBUG_ENV = Sys.getenv('DEBUG') != ""
 if (OPTIMIZATION_LOG_FILE != "") {
   flog.appender(appender.file('optimization.log'), name='optimization')
 }
@@ -575,17 +576,18 @@ server <- function(input, output, session) {
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
   
-  # TODO remove
-  # after each assignment change plot the best solutions fitness
-  observeEvent(r$assignment_rev, {
-    current = units %>% as.data.frame() %>%
-      filter(unit_id %in% optimizable_units) %>%
-      select(unit_id) %>%
-      left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
-      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-    
-    mem_fitness_f(current, verbose=T)
-  })
+  if (DEBUG_ENV) {
+    # after each assignment change plot the best solutions fitness
+    observeEvent(r$assignment_rev, {
+      current = units %>% as.data.frame() %>%
+        filter(unit_id %in% optimizable_units) %>%
+        select(unit_id) %>%
+        left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
+        mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
+      
+      mem_fitness_f(current, verbose=T)
+    })
+  }
 
   ### genetic algorithm
   
