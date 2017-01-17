@@ -489,10 +489,6 @@ units = units %>% sp::merge(
 file.remove('app/data/units.geojson')
 units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
 units@data %>% write_csv('app/data/units.csv')
-
-adjacency_df %>% filter(connected) %>%
-  rowwise() %>% mutate(key=sort(c(from, to))) %>% ungroup() %>%
-  group_by(key) %>% summarise(key)
 ```
 
 #### Zuordnung
