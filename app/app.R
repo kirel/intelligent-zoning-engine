@@ -539,9 +539,6 @@ server <- function(input, output, session) {
 
           r$fittest_fitness = c(r$fittest_fitness, solution$score)
           
-          # TODO remove
-          mem_fitness_f(solution$solution, verbose=TRUE)
-            
           # update relevant values for ui updates
           prev_entities = r$units$entity_id
           new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>%
@@ -565,6 +562,18 @@ server <- function(input, output, session) {
       geom_line(aes(x=seq_along(r$fittest_fitness), y=r$fittest_fitness)) +
       geom_line(aes(x=seq_along(diff(r$fittest_fitness))+1, y=diff(r$fittest_fitness)*(-1)), linetype=2) +
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
+  })
+  
+  # TODO remove
+  # after each assignment change plot the best solutions fitness
+  observeEvent(r$assignment_rev, {
+    current = units %>% as.data.frame() %>%
+      filter(unit_id %in% optimizable_units) %>%
+      select(unit_id) %>%
+      left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
+      mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
+    
+    mem_fitness_f(current, verbose=T)
   })
 
   ### genetic algorithm
