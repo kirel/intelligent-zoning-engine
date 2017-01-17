@@ -27,6 +27,12 @@ entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFacto
 weights = read_csv('data/weights.csv')
 adjacency = read_csv('data/adjacency.csv', col_types ='cc')
 
+# Add coordinates to adjacency data frame - just for debugging / visualization
+row.names(units) = units$unit_id
+adjacency = adjacency %>%
+  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=rownames(.))) %>%
+  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
+
 assignment = units@data %>%
   select(unit_id) %>%
   left_join(read_csv('data/assignment.csv'), by='unit_id') %>%
@@ -664,6 +670,12 @@ server <- function(input, output, session) {
       inner_join(individual, by=c('from'='unit_id'), copy = T) %>%
       inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
       filter(entity_id == to_entity_id)
+    
+    # browser() here to debug connected components with following plot:
+    # ggplot() +
+    #  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(units, region='unit_id')) +
+    #  geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=filtered_edges) +
+    #  theme_nothing() + coord_map()
     
     optimum_connected_components = length(entity_ids)
     connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
