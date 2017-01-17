@@ -705,7 +705,7 @@ server <- function(input, output, session) {
   ### table
 
   reactive_table_data = reactive({
-    r$assignment_rev # recalculate if assignment_rev is altered
+    rev = r$assignment_rev # recalculate if assignment_rev is altered
     isolate(r$units) %>% as_data_frame() %>%
       filter(entity_id != NO_ASSIGNMENT) %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
@@ -795,6 +795,8 @@ server <- function(input, output, session) {
     # This comparison with the actual value is necessary because otherwise it triggers an endless loop
     if (!is.null(currently_selected) && is.null(should_be_selected)) {
       tableProxy %>% selectRows(NULL)
+    } else if (is.null(currently_selected) && !is.null(should_be_selected)) {
+      tableProxy %>% selectRows(should_be_selected)
     } else if (!is.null(currently_selected) && !is.null(should_be_selected) && currently_selected != should_be_selected) {
       tableProxy %>% selectRows(should_be_selected)
     }
