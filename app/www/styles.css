@@ -88,6 +88,14 @@ body {
     margin: 0 5px;
 }
 
+#detail--units h5, #detail--entity h5 {
+  margin-bottom: 0;
+}
+
+#detail--units h4, #detail--entity h4 {
+  margin-top: 0;
+}
+
 #detail--units--selected-units {
   margin-top: 10px;
 }
@@ -100,6 +108,14 @@ body {
     border: none;
     font-size: 1.2em;
     margin: 0 2px;
+}
+
+#detail--units--controls, #detail--entity--controls, #selected_units_table {
+  display: none;
+}
+
+.units-selected #detail--units--controls, .units-selected #selected_units_table, .entity-selected #detail--entity--controls {
+  display: block;
 }
 
 #detail--units--controls, #detail--entity--controls {

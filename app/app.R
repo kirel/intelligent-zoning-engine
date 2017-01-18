@@ -143,6 +143,7 @@ ui <- fillPage(
                   tabPanel("Details", div(id='detail',
                       fillRow(
                         div(id='detail--entity',
+                            h5('Schule:'),
                             h4(id='detail--entity--selected-school', textOutput('selected_entity')),
                             div(id='detail--entity--controls',
                                 actionButton('deselect_entity', '', icon=icon('remove'))
@@ -150,6 +151,7 @@ ui <- fillPage(
                             tableOutput('selected_entity_table')
                         ),
                         div(id='detail--units',
+                            h5('Blöcke:'),
                             h4(id='detail--units--selected-units', uiOutput('selected_units')),
                             div(id='detail--units--controls',
                                 actionButton('deselect_units', '', icon=icon('remove')),
@@ -282,6 +284,16 @@ server <- function(input, output, session) {
 
   observeEvent(input$show_population, {
     r$units$updated = T
+  })
+  
+  ### selection status
+  
+  observe({
+    shinyjs::toggleClass('map-panel', 'entity-selected', r$selected_entity != NONE_SELECTED) 
+  })
+  
+  observe({
+    shinyjs::toggleClass('map-panel', 'units-selected', sum(r$units$selected) > 0) 
   })
   
   ### Localstorage of assignment
@@ -872,7 +884,7 @@ server <- function(input, output, session) {
       entity = entities@data %>% filter(entity_id == r$selected_entity)
       paste(r$selected_entity, entity$SCHULNAME)
     } else {
-      'Keine Schule ausgewählt'
+      'Keine ausgewählt'
     }
   })
   
@@ -895,7 +907,7 @@ server <- function(input, output, session) {
       selected_unit_ids = r$units$unit_id[r$units$selected]
       do.call(paste, c(sep=', ', as.list(selected_unit_ids)))
     } else {
-      'Keine Blöcke ausgewählt'
+      'Keine ausgewählt'
     }
   })
   
