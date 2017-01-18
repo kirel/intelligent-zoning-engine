@@ -1,12 +1,19 @@
 body {
   min-width: 1200px;
-
 }
 
 /*** Map ***/
 
 #map-panel {
   height: calc(100% - 400px);
+}
+
+#map .entity {
+  stroke-width: 2;
+}
+
+#map .entity.selected {
+  stroke-width: 4;
 }
 
 #map-panel .capacity-indicator {
@@ -317,5 +324,5 @@ body {
 }
 
 #about--logos img {
-  max-height: 100px;
+  max-height: 80px;
 }
