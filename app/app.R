@@ -80,7 +80,6 @@ entities$selected = F
 # Remark: There is no entities$updated because they have to be redrawn anyway
 entities$highlighted = T # highlight when selected
 entities$hovered = F
-entities$warning = F
 units$selected = F # selected units can be reassigned, locked, etc
 units$highlighted = T # highlight units when assigned entity is selected
 units$locked = F
@@ -442,7 +441,7 @@ server <- function(input, output, session) {
     # always draw entities on top
     capacity_warning = r$entities %>% as.data.frame() %>%
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
-      mutate(utilization=pop/capacity, warning=utilization < MIN_UTILIZATION | utilization > MAX_UTILIZATION) %>% .$warning
+      mutate(utilization=pop/capacity, warning=ifelse(utilization < MIN_UTILIZATION, 'under-capacity', ifelse(utilization > MAX_UTILIZATION, 'over-capacity', ''))) %>% .$warning
     warning_radius = r$entities %>% as.data.frame() %>%
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
       mutate(utilization=pop/capacity,
@@ -452,7 +451,7 @@ server <- function(input, output, session) {
     map = map %>%
       addCircleMarkers(
         data=r$entities, group='entities-warning', layerId=~paste0('entity_warning_', entity_id),
-        options=pathOptions(pointerEvents='none', className=~ifelse(capacity_warning, 'capacity-indicator warning', 'capacity-indicator nowarning')),
+        options=pathOptions(pointerEvents='none', className=~paste('capacity-indicator', capacity_warning)),
         fillOpacity=NULL, color=NULL, opacity=NULL, fillColor=NULL,
         weight=2, radius=~warning_radius
       ) %>%
