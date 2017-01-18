@@ -75,7 +75,7 @@ body {
 }
 
 #table-panel td {
-  background-color:#ffffff;
+  background-color: #ffffff !important;
   border-bottom: 5px solid;
   border-top: 5px solid;
   border-color:lightgrey;
