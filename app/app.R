@@ -825,6 +825,7 @@ server <- function(input, output, session) {
   $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ');
 
   $('td:eq(1)', row).append('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
+  $(row).removeClass('even').removeClass('odd');
   $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
   ",
   "}")
