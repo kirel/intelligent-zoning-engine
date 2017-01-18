@@ -8,6 +8,14 @@ body {
   height: calc(100% - 270px);
 }
 
+#map .entity {
+  stroke-width: 2;
+}
+
+#map .entity.selected {
+  stroke-width: 4;
+}
+
 #map-panel .capacity-indicator {
   opacity: 0;
   stroke: none;
