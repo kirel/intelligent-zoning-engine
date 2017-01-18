@@ -5,7 +5,7 @@ body {
 /*** Map ***/
 
 #map-panel {
-  height: calc(100% - 260px);
+  height: calc(100% - 270px);
 }
 
 #map-panel .capacity-indicator {
@@ -163,5 +163,5 @@ body {
 }
 
 #about--logos img {
-  max-height: 100px;
+  max-height: 80px;
 }
