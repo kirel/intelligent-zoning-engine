@@ -85,7 +85,7 @@ Hash: fb672e20eb6f3010a3639f855d8ef6de
 Package: RSQLite
 Source: CRAN
 Version: 1.1-1
-Hash: 948c184b76f9a4f8aa519ccda09e9069
+Hash: f6df790ac6965cf9a5391f1c6110795a
 Requires: BH, DBI, Rcpp, memoise, plogr
 
 Package: Rcpp
@@ -559,6 +559,7 @@ Requires: codetools, digest, registry, stringr, xtable
 Package: plogr
 Source: CRAN
 Version: 0.1-1
+Hash: fb19215402e2d9f1c7f803dcaa806fc2
 
 Package: plyr
 Source: CRAN
