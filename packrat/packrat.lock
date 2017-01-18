@@ -495,6 +495,12 @@ Source: CRAN
 Version: 0.5
 Hash: 463550cf44fb6f0a2359368f42eebe62
 
+Package: miniUI
+Source: CRAN
+Version: 0.1.1
+Hash: e85626581f80b1fe6c92a96ec348efc5
+Requires: htmltools, shiny
+
 Package: mnormt
 Source: CRAN
 Version: 1.5-5
@@ -703,6 +709,12 @@ GithubRepo: shinyStore
 GithubUsername: trestletech
 GithubRef: master
 GithubSha1: d7e36d57284df01edb6f6815ff1d762ffa77742e
+
+Package: shinyjs
+Source: CRAN
+Version: 0.9
+Hash: 579098ad240eba826dc5d96c8c2a5d13
+Requires: digest, htmltools, jsonlite, miniUI, shiny
 
 Package: sourcetools
 Source: CRAN

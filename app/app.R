@@ -10,6 +10,7 @@ options(warn=-1)
 
 flog.threshold(DEBUG)
 OPTIMIZATION_LOG_FILE = Sys.getenv('OPTIMIZATION_LOG_FILE')
+DEBUG_ENV = Sys.getenv('DEBUG') != ""
 if (OPTIMIZATION_LOG_FILE != "") {
   flog.appender(appender.file('optimization.log'), name='optimization')
 }
@@ -27,6 +28,12 @@ entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFacto
 weights = read_csv('data/weights.csv')
 adjacency = read_csv('data/adjacency.csv', col_types ='cc')
 
+# Add coordinates to adjacency data frame - just for debugging / visualization
+row.names(units) = units$unit_id
+adjacency = adjacency %>%
+  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=rownames(.))) %>%
+  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
+
 assignment = units@data %>%
   select(unit_id) %>%
   left_join(read_csv('data/assignment.csv'), by='unit_id') %>%
@@ -41,6 +48,7 @@ bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAs
 entity_ids = unique(entities$entity_id)
 unit_ids = unique(units$unit_id)
 optimizable_units = units %>% as.data.frame %>% filter(population > 0) %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
+population_range = range(units$population, na.rm = T, finite = T)
 
 flog.debug('Data loading complete')
 
@@ -73,7 +81,6 @@ entities$selected = F
 # Remark: There is no entities$updated because they have to be redrawn anyway
 entities$highlighted = T # highlight when selected
 entities$hovered = F
-entities$warning = F
 units$selected = F # selected units can be reassigned, locked, etc
 units$highlighted = T # highlight units when assigned entity is selected
 units$locked = F
@@ -110,6 +117,7 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 ### UI
 ui <- fillPage(
   shinyStore::initStore("store", "shinyStore-ize1"),
+  shinyjs::useShinyjs(),
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
@@ -127,6 +135,10 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
+      div(id="map-controls",
+          checkboxInput("show_utilization", "Auslastung anzeigen", value = TRUE),
+          checkboxInput("show_population", "Population anzeigen", value = FALSE)
+          ),
       tabsetPanel(type="tabs", id="tabs",
                   tabPanel("Details", div(id='detail',
                       fillRow(
@@ -166,6 +178,9 @@ ui <- fillPage(
                   tabPanel("Optimierung", div(id='optimize',
                       uiOutput('optimize_button', inline = TRUE),
                       plotOutput('fitness', height = '120px')
+                  )),
+                  tabPanel("Über das Projekt", div(id='about',
+                    includeMarkdown("about.md")
                   ))
       )
     ),
@@ -187,6 +202,8 @@ server <- function(input, output, session) {
     selected_entity=NONE_SELECTED,
     previous_selected_entity=NONE_SELECTED,
     selected_entity_index=NULL, # only one can be selected
+    show_utilization = T,
+    show_population = F,
     running_optimization=FALSE,
     optimization_step=0,
     previous_mouseover=NONE_SELECTED)
@@ -256,6 +273,16 @@ server <- function(input, output, session) {
     r$selected_entity = NONE_SELECTED
     r$selected_entity_index = NULL
   }) 
+  
+  ### Map controls
+  
+  observe({
+    shinyjs::toggleClass("map-panel", "show-utilization", input$show_utilization)
+  })
+
+  observeEvent(input$show_population, {
+    r$units$updated = T
+  })
   
   ### Localstorage of assignment
   
@@ -400,16 +427,23 @@ server <- function(input, output, session) {
 
   ### Update the UI
 
-  updateMap = function(map, units) {
+  updateMap = function(map, units, show_population = FALSE) {
     flog.debug('updateMap')
     flog.debug('nrow(units) %s', nrow(units))
     if (nrow(units) > 0) {
       flog.debug('redrawing units')
+      replaceNA = function(x, replace) ifelse(is.na(x), replace, x)
       map = map %>%
         # redraw updated selected units
         addPolygons(
           data=units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2,
+          stroke = F,
+          fillOpacity = ~ replaceNA(
+            ifelse(rep(show_population, nrow(units)),
+                   scales::rescale(population, to=c(0.1, 1), from=population_range)
+                   , 1),
+            1),
+          smoothFactor = 0.2,
           color = ~ ifelse( # TODO factor into function
               entity_id == NONE_SELECTED & unit_id %in% optimizable_units,
               ifelse(!highlighted, desat(warning_color, 0.3), warning_color),
@@ -432,14 +466,19 @@ server <- function(input, output, session) {
     # always draw entities on top
     capacity_warning = r$entities %>% as.data.frame() %>%
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
-      mutate(utilization=pop/capacity, warning=utilization < MIN_UTILIZATION | utilization > MAX_UTILIZATION) %>% .$warning
-    r$entities$warning = capacity_warning
+      mutate(utilization=pop/capacity, warning=ifelse(utilization < MIN_UTILIZATION, 'under-capacity', ifelse(utilization > MAX_UTILIZATION, 'over-capacity', ''))) %>% .$warning
+    warning_radius = r$entities %>% as.data.frame() %>%
+      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
+      mutate(utilization=pop/capacity,
+             utilization_diff=abs(utilization-1),
+             warning_radius=pmax(7, pmin(12, scales::rescale(utilization_diff, c(7, 12), c(0.1, 1))))) %>%
+      .$warning_radius
     map = map %>%
       addCircleMarkers(
         data=r$entities, group='entities-warning', layerId=~paste0('entity_warning_', entity_id),
-        options=pathOptions(pointerEvents='none', className=~ifelse(warning, 'capacity-indicator warning', 'capacity-indicator nowarning')),
+        options=pathOptions(pointerEvents='none', className=~paste('capacity-indicator', capacity_warning)),
         fillOpacity=NULL, color=NULL, opacity=NULL, fillColor=NULL,
-        weight=2, radius=7
+        weight=2, radius=~warning_radius
       ) %>%
       addCircleMarkers(
         data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
@@ -455,7 +494,7 @@ server <- function(input, output, session) {
       m <- leaflet() %>%
         addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
         addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
-        updateMap(r$units)
+        updateMap(r$units, input$show_population)
       r$units$updated = F
       flog.debug('Map initialized')
       m      
@@ -465,8 +504,9 @@ server <- function(input, output, session) {
   # incremental map update
   observe({
     updated_units = r$units[r$units$updated,]
+    show_population = input$show_population
     isolate({
-      leafletProxy("map") %>% updateMap(updated_units)
+      leafletProxy("map") %>% updateMap(updated_units, show_population)
     })
     r$units$updated = F
     flog.debug('Map updated')
@@ -538,7 +578,7 @@ server <- function(input, output, session) {
           solution = get_optim_solution()
 
           r$fittest_fitness = c(r$fittest_fitness, solution$score)
-            
+          
           # update relevant values for ui updates
           prev_entities = r$units$entity_id
           new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>%
@@ -563,6 +603,19 @@ server <- function(input, output, session) {
       geom_line(aes(x=seq_along(diff(r$fittest_fitness))+1, y=diff(r$fittest_fitness)*(-1)), linetype=2) +
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
+  
+  if (DEBUG_ENV) {
+    # after each assignment change plot the best solutions fitness
+    observeEvent(r$assignment_rev, {
+      current = units %>% as.data.frame() %>%
+        filter(unit_id %in% optimizable_units) %>%
+        select(unit_id) %>%
+        left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
+        mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
+      
+      mem_fitness_f(current, verbose=T)
+    })
+  }
 
   ### genetic algorithm
   
@@ -640,7 +693,7 @@ server <- function(input, output, session) {
     list(child_a, child_b)
   }
 
-  fitness_f = function(individual) {
+  fitness_f = function(individual, verbose=FALSE) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 1
     DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
@@ -653,7 +706,15 @@ server <- function(input, output, session) {
       inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
       filter(entity_id == to_entity_id)
     
-    coherence_cost = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F))/length(entity_ids)
+    # browser() here to debug connected components with following plot:
+    # ggplot() +
+    #  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(units, region='unit_id')) +
+    #  geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=filtered_edges) +
+    #  theme_nothing() + coord_map()
+    
+    optimum_connected_components = length(entity_ids)
+    connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
+    coherence_cost = connected_components/optimum_connected_components
     
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
@@ -679,18 +740,18 @@ server <- function(input, output, session) {
         under_capacity_penalty = UNDER_CAPACITY_WEIGHT*under_capacity_penalty
         ) %>%
       (function(x) {
-        #if (runif(1)<0) {
-        if (runif(1)<0.01) {
-          flog.debug('Random sample error components', name='optimization')
+        if (verbose) {
+          flog.debug('*** error components', name='optimization')
           flog.debug('Avg distance error: %s', x$avg, name='optimization')
           flog.debug('Max distance error: %s', x$max, name='optimization')
           flog.debug('Over capacity error: %s', x$over_capacity_penalty, name='optimization')
           flog.debug('Under capacity error: %s', x$under_capacity_penalty, name='optimization')
-          flog.debug('Coherence cost: %s', coherence_cost, name='optimization')
+          flog.debug('Coherence cost: %s (%s connected components/%s schools)', coherence_cost, connected_components, optimum_connected_components, name='optimization')
+          flog.debug('***', name='optimization')
         }
         x
       }) %>%
-      mutate(fitness = avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
+      mutate(fitness = max + avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
   }
 
   mem_fitness_f = memoise(fitness_f)
@@ -700,7 +761,7 @@ server <- function(input, output, session) {
   ### table
 
   reactive_table_data = reactive({
-    r$assignment_rev # recalculate if assignment_rev is altered
+    rev = r$assignment_rev # recalculate if assignment_rev is altered
     isolate(r$units) %>% as_data_frame() %>%
       filter(entity_id != NO_ASSIGNMENT) %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
@@ -713,7 +774,7 @@ server <- function(input, output, session) {
         pop=sum(population, na.rm=T),
         sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
-      left_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>%
+      left_join(entities %>% as.data.frame %>% select(entity_id, BZR, capacity), by='entity_id') %>%
       mutate(
         utilization=pop/capacity
       )
@@ -728,7 +789,8 @@ server <- function(input, output, session) {
           Auslastung=utilization,
           `SGBII(u.65)`=sgbIIu65,
           `Weg (Ø)`=avg_dist,
-          `Weg (max)`=max_dist
+          `Weg (max)`=max_dist,
+          BZR=BZR
         )
   })
 
@@ -790,6 +852,8 @@ server <- function(input, output, session) {
     # This comparison with the actual value is necessary because otherwise it triggers an endless loop
     if (!is.null(currently_selected) && is.null(should_be_selected)) {
       tableProxy %>% selectRows(NULL)
+    } else if (is.null(currently_selected) && !is.null(should_be_selected)) {
+      tableProxy %>% selectRows(should_be_selected)
     } else if (!is.null(currently_selected) && !is.null(should_be_selected) && currently_selected != should_be_selected) {
       tableProxy %>% selectRows(should_be_selected)
     }

@@ -67,7 +67,7 @@ einwohner_lor = read_delim('download/EWR201512E_Matrix.csv', delim=';')
 ## Überprüfung der Vollständigkeit der Daten über Anmeldezahlen/Kapazitäten
 
 ```{r}
-re_schulstand_df = re_schulstand %>% as.data.frame() %>% rename(lon=coords.x1, lat=coords.x2)
+re_schulstand_df = re_schulstand %>% as.data.frame() %>% rename(lon=coords.x1, lat=coords.x2) %>% cbind(over(re_schulstand, lor))
 re_schulstand_df %>% filter(grepl('G', spatial_name)) %>% mutate(BEZIRK=enc2utf8(as.character(BEZIRK))) %>%
   group_by(BEZIRK) %>% summarise(`Anzahl Schulen` = n()) %>%
   rename(Bezirk=BEZIRK) %>% left_join(kapas %>% group_by(Bezirk) %>% summarise(`Mit Kapazität` = n()))
@@ -487,12 +487,8 @@ units = units %>% sp::merge(
   )
 
 file.remove('app/data/units.geojson')
-units %>% writeOGR('app/data/units.geojson', layer="entities", driver="GeoJSON", check_exists=F)
+units %>% writeOGR('app/data/units.geojson', layer="units", driver="GeoJSON", check_exists=F)
 units@data %>% write_csv('app/data/units.csv')
-
-adjacency_df %>% filter(connected) %>%
-  rowwise() %>% mutate(key=sort(c(from, to))) %>% ungroup() %>%
-  group_by(key) %>% summarise(key)
 ```
 
 #### Zuordnung

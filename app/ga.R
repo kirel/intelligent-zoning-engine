@@ -3,7 +3,8 @@
 ga_breed = function(population, ga_mutate, ga_crossover, fitness_f, num_pairs = 50, num_mutants = 100, mutation_fraction=0.001, heuristic_exponent=3) {
   # precalculate sampling weights for sampling from the fittest
   fitness = unlist(map(population, fitness_f))
-  flog.debug('original population fitness %s', summary(fitness), name='optimization')
+  f_summary = summary(fitness) 
+  flog.debug('original population fitness %s', toString(purrr::flatten(purrr::zip2(names(f_summary), f_summary))), name='optimization')
   weights = -fitness+min(fitness)+max(fitness)
   prob = weights/sum(weights)
   
@@ -11,7 +12,10 @@ ga_breed = function(population, ga_mutate, ga_crossover, fitness_f, num_pairs = 
   mutated = population %>%
     sample(num_mutants, replace = T, prob = prob) %>% # sample based on fitness
     map(~ ga_mutate(.x, mutation_fraction, heuristic_exponent))
-  if (length(mutated)>0) flog.debug('mutated fitness %s', summary(unlist(map(mutated, fitness_f))), name='optimization')
+  if (length(mutated)>0) {
+    f_summary = summary(unlist(map(mutated, fitness_f)))
+    flog.debug('mutated fitness %s', toString(purrr::flatten(purrr::zip2(names(f_summary), f_summary))), name='optimization')
+  }
   
   mating_population = c(population, mutated)
   if (length(mating_population) > 1) {
@@ -22,7 +26,8 @@ ga_breed = function(population, ga_mutate, ga_crossover, fitness_f, num_pairs = 
     flog.debug('Mating %s pairs', num_pairs, name='optimization')
     pairs = (1:num_pairs) %>% map(~ sample(mating_population, 2, prob = mating_prob)) # sample based on fitness
     mated = do.call(c, map(pairs, ~ do.call(ga_crossover, .x)))
-    flog.debug('mated fitness %s', summary(unlist(map(mated, fitness_f))), name='optimization')
+    f_summary = summary(unlist(map(mated, fitness_f)))
+    flog.debug('mated fitness %s', toString(purrr::flatten(purrr::zip2(names(f_summary), f_summary))), name='optimization')
   } else {
     mated = list()
   }

@@ -1,1 +1,2 @@
 OPTIMIZATION_LOG_FILE=optimization.log
+DEBUG=1
