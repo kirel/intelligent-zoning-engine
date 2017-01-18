@@ -48,6 +48,7 @@ bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAs
 entity_ids = unique(entities$entity_id)
 unit_ids = unique(units$unit_id)
 optimizable_units = units %>% as.data.frame %>% filter(population > 0) %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
+population_range = range(units$population, na.rm = T, finite = T)
 
 flog.debug('Data loading complete')
 
@@ -116,6 +117,7 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 ### UI
 ui <- fillPage(
   shinyStore::initStore("store", "shinyStore-ize1"),
+  shinyjs::useShinyjs(),
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
@@ -133,6 +135,10 @@ ui <- fillPage(
     div(
       id='map-panel',
       leafletOutput("map", width="100%", height='100%'),
+      div(id="map-controls",
+          checkboxInput("show_utilization", "Auslastung anzeigen", value = TRUE),
+          checkboxInput("show_population", "Population anzeigen", value = FALSE)
+          ),
       tabsetPanel(type="tabs", id="tabs",
                   tabPanel("Details", div(id='detail',
                       fillRow(
@@ -196,6 +202,8 @@ server <- function(input, output, session) {
     selected_entity=NONE_SELECTED,
     previous_selected_entity=NONE_SELECTED,
     selected_entity_index=NULL, # only one can be selected
+    show_utilization = T,
+    show_population = F,
     running_optimization=FALSE,
     optimization_step=0,
     previous_mouseover=NONE_SELECTED)
@@ -265,6 +273,16 @@ server <- function(input, output, session) {
     r$selected_entity = NONE_SELECTED
     r$selected_entity_index = NULL
   }) 
+  
+  ### Map controls
+  
+  observe({
+    shinyjs::toggleClass("map-panel", "show-utilization", input$show_utilization)
+  })
+
+  observeEvent(input$show_population, {
+    r$units$updated = T
+  })
   
   ### Localstorage of assignment
   
@@ -409,16 +427,23 @@ server <- function(input, output, session) {
 
   ### Update the UI
 
-  updateMap = function(map, units) {
+  updateMap = function(map, units, show_population = FALSE) {
     flog.debug('updateMap')
     flog.debug('nrow(units) %s', nrow(units))
     if (nrow(units) > 0) {
       flog.debug('redrawing units')
+      replaceNA = function(x, replace) ifelse(is.na(x), replace, x)
       map = map %>%
         # redraw updated selected units
         addPolygons(
           data=units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F, fillOpacity = 1, smoothFactor = 0.2,
+          stroke = F,
+          fillOpacity = ~ replaceNA(
+            ifelse(rep(show_population, nrow(units)),
+                   scales::rescale(population, to=c(0.1, 1), from=population_range)
+                   , 1),
+            1),
+          smoothFactor = 0.2,
           color = ~ ifelse( # TODO factor into function
               entity_id == NONE_SELECTED & unit_id %in% optimizable_units,
               ifelse(!highlighted, desat(warning_color, 0.3), warning_color),
@@ -446,7 +471,7 @@ server <- function(input, output, session) {
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
       mutate(utilization=pop/capacity,
              utilization_diff=abs(utilization-1),
-             warning_radius=pmax(0, pmin(10, scales::rescale(utilization_diff, c(5, 10), c(0.1, 1))))) %>%
+             warning_radius=pmax(7, pmin(12, scales::rescale(utilization_diff, c(7, 12), c(0.1, 1))))) %>%
       .$warning_radius
     map = map %>%
       addCircleMarkers(
@@ -469,7 +494,7 @@ server <- function(input, output, session) {
       m <- leaflet() %>%
         addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
         addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
-        updateMap(r$units)
+        updateMap(r$units, input$show_population)
       r$units$updated = F
       flog.debug('Map initialized')
       m      
@@ -479,8 +504,9 @@ server <- function(input, output, session) {
   # incremental map update
   observe({
     updated_units = r$units[r$units$updated,]
+    show_population = input$show_population
     isolate({
-      leafletProxy("map") %>% updateMap(updated_units)
+      leafletProxy("map") %>% updateMap(updated_units, show_population)
     })
     r$units$updated = F
     flog.debug('Map updated')

@@ -10,25 +10,47 @@ body {
 
 #map-panel .capacity-indicator {
   opacity: 0;
+  stroke: none;
+  fill: none;  
 }
 
-#map-panel .capacity-indicator.under-capacity, #map-panel .capacity-indicator.over-capacity {
-  stroke-width: 5;
+#map-panel.show-utilization .capacity-indicator.under-capacity, #map-panel .capacity-indicator.over-capacity {
   opacity: 0.5;
 }
 
-#map-panel .capacity-indicator.under-capacity {
-  stroke: white;
+#map-panel.show-utilization .capacity-indicator.under-capacity {
+  fill: white;
 }
 
-#map-panel .capacity-indicator.over-capacity {
-  stroke: red;
+#map-panel.show-utilization .capacity-indicator.over-capacity {
+  fill: red;
 }
 
 /* see http://iros.github.io/patternfills/sample_css.html */
 #svg-patterns { position: absolute; }
 .unlocked { fill: transparent; }
 .locked { fill: url(#locked-pattern); }
+
+/*** Map controls ***/
+
+#map-controls {
+  padding: 5px;
+}
+
+#map-controls .form-group, #map-controls .checkbox {
+  display: inline;
+}
+
+#map-controls .form-group {
+  border-right: 1px solid lightgray;
+  margin-right: 10px;
+  padding-right: 5px;
+}
+
+#map-controls .form-group:last-child {
+  border-right: none;
+}
+
 
 /*** Table ***/
 
