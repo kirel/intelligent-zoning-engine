@@ -142,6 +142,13 @@ ui <- fillPage(
       tabsetPanel(type="tabs", id="tabs",
                   tabPanel("Details", div(id='detail',
                       fillRow(
+                        div(id='detail--entity',
+                            h4(id='detail--entity--selected-school', textOutput('selected_entity')),
+                            div(id='detail--entity--controls',
+                                actionButton('deselect_entity', '', icon=icon('remove'))
+                            ),
+                            tableOutput('selected_entity_table')
+                        ),
                         div(id='detail--units',
                             h4(id='detail--units--selected-units', uiOutput('selected_units')),
                             div(id='detail--units--controls',
@@ -152,13 +159,6 @@ ui <- fillPage(
                                 actionButton('unlock_units', '', icon=icon('unlock'))
                             ),
                             tableOutput('selected_units_table')
-                        ),
-                        div(id='detail--entity',
-                            h4(textOutput('selected_entity')),
-                            div(id='detail--units--controls',
-                                actionButton('deselect_entity', '', icon=icon('remove'))
-                            ),
-                            tableOutput('selected_entity_table')
                         )
                       )
                       # TODO move buttons into UI outputs
