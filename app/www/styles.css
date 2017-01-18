@@ -58,13 +58,37 @@ body {
   height: 100%; overflow: scroll;
 }
 
-.capacity-ok { color: green; }
+.capacity-ok td:nth-child(5) { color: green; }
+.over-capacity td:nth-child(5) { color: red; }
+.under-capacity td:nth-child(5) { color: royalblue; }
+
 .capacity-ok .glyphicon-remove { display: none; }
-.capacity-panic { color: red; }
-.capacity-panic .glyphicon-ok { display: none; }
+.over-capacity .glyphicon-ok, .under-capacity .glyphicon-ok { display: none; }
+
 .change-up .glyphicon-arrow-down { display: none; }
 .change-down .glyphicon-arrow-up { display: none; }
 .no-change { color: transparent; }
+
+#detail .entity-color-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  margin: 0 5px;
+}
+
+#table-panel td:nth-child(1) {
+  position: relative;
+}
+
+#table-panel td:nth-child(1) .entity-color-indicator {
+  display: inline-block;
+  position: absolute;
+  width: 4px;
+  height: 100%;
+  left: 0;
+  top: 0;
+}
 
 /*** Tabs & Detail ***/
 

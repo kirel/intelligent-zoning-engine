@@ -99,7 +99,7 @@ entity_ids_color = c(
 )
 palette = rep(valid_colors, length(entity_ids_color)/length(valid_colors)+1)[1:length(entity_ids_color)]
 cfac = colorFactor(palette, levels=entity_ids_color)
-entity_colors = function(entity_id, desaturate) {
+entity_colors = function(entity_id, desaturate = FALSE) {
   color = cfac(entity_id)
   ifelse(desaturate, desat(color, 0.3), color)
 }
@@ -121,7 +121,10 @@ ui <- fillPage(
   tags$head(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
-    tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")
+    tags$link(rel = "stylesheet", type = "text/css", href = "styles.css"),
+    tags$style(HTML(
+      do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color), ~ paste0(".entity-color-", .x, " {color:", .y, " !important;}.entity-bg-", .x, " {background-color:", .y, "!important;}\n")))
+      ))
   ),
   # stripes pattern
   div(
@@ -144,7 +147,7 @@ ui <- fillPage(
                       fillRow(
                         div(id='detail--entity',
                             h5('Schule:'),
-                            h4(id='detail--entity--selected-school', textOutput('selected_entity')),
+                            h4(id='detail--entity--selected-school', uiOutput('selected_entity')),
                             div(id='detail--entity--controls',
                                 actionButton('deselect_entity', '', icon=icon('remove'))
                             ),
@@ -810,14 +813,20 @@ server <- function(input, output, session) {
 
 
   rowCallback = DT::JS("function(row, data) {",
-  "if (data[4] < ", MIN_UTILIZATION, " || data[4] > ", MAX_UTILIZATION, ") {",
+  "if (data[4] < ", MIN_UTILIZATION, ") {",
   "
-    $('td:eq(4)', row).addClass('capacity-panic').removeClass('capacity-ok');
+    $(row).addClass('under-capacity').removeClass('over-capacity').removeClass('capacity-ok');
+  } else if (data[4] > ", MAX_UTILIZATION, ") {
+    $(row).addClass('over-capacity').removeClass('under-capacity').removeClass('capacity-ok');
   } else {
-    $('td:eq(4)', row).addClass('capacity-ok').removeClass('capacity-panic');
+    $(row).addClass('capacity-ok').removeClass('under-capacity').removeClass('over-capacity');
   }
 
-  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ')",
+  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ');
+
+  $('td:eq(1)', row).append('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
+  $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
+  ",
   "}")
 
   # initial table render (see later observe for update)
@@ -879,12 +888,12 @@ server <- function(input, output, session) {
     ifelse(num > thres, paste0('<div class="warning">',s,'</div>'), s)
   }
 
-  output$selected_entity = renderText({
+  output$selected_entity = renderUI({
     if (r$selected_entity != NONE_SELECTED) {
       entity = entities@data %>% filter(entity_id == r$selected_entity)
-      paste(r$selected_entity, entity$SCHULNAME)
+      HTML(paste0(r$selected_entity, '<span class="entity-color-indicator entity-bg-', r$selected_entity, '"></span>', entity$SCHULNAME))
     } else {
-      'Keine ausgewählt'
+      HTML('Keine ausgewählt')
     }
   })
   
