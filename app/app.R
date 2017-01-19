@@ -41,6 +41,8 @@ assignment = units@data %>%
 
 units = units %>% sp::merge(assignment)
 
+entities_df = entities %>% as.data.frame()
+
 rm(assignment)
 
 bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE) %>% subset(BEZ == '07')
@@ -204,6 +206,7 @@ server <- function(input, output, session) {
   r = reactiveValues(
     units=units, entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
+    map_rev=0, # assignment revision - indicator that the map needs an update
     selected_entity=NONE_SELECTED,
     previous_selected_entity=NONE_SELECTED,
     selected_entity_index=NULL, # only one can be selected
@@ -219,6 +222,15 @@ server <- function(input, output, session) {
     population=NULL
     )
 
+  mapNeedsUpdate = function() {
+    r$map_rev = r$map_rev + 1
+  }
+  
+  tableNeedsUpdate = function() {
+    r$assignment_rev = r$assignment_rev + 1
+    mapNeedsUpdate()
+  }
+  
   ### Interaction
 
   observeEvent(input$optimize, {
@@ -237,7 +249,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'entity_id'] = r$selected_entity
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
     reset_optimization(r$units)
   })
   
@@ -246,7 +258,7 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
     reset_optimization(r$units)
   })
   
@@ -254,14 +266,14 @@ server <- function(input, output, session) {
     flog.debug('Deselect button pressed')
     r$units[r$units$selected, 'updated'] = T
     r$units$selected = F
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
   })
   
   observeEvent(input$lock_units, {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
     r$units[r$units$selected, 'updated'] = T
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
     reset_optimization(r$units)
   })
   
@@ -269,7 +281,7 @@ server <- function(input, output, session) {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
     r$units[r$units$selected, 'updated'] = T
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
     reset_optimization(r$units)
   })
   
@@ -287,6 +299,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$show_population, {
     r$units$updated = T
+    mapNeedsUpdate()
   })
   
   ### selection status
@@ -304,7 +317,7 @@ server <- function(input, output, session) {
   observeEvent(input$reset_assignment, {
     shinyStore::updateStore(session, "assignment", NULL)
     r$units = units
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
   })
   
   observeEvent(r$assignment_rev, {
@@ -340,7 +353,7 @@ server <- function(input, output, session) {
       left_join(upload, by="unit_id") %>% .$entity_id
     r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
     r$units$updated = TRUE
-    r$assignment_rev = r$assignment_rev + 1
+    tableNeedsUpdate()
   })
 
   # unit mouseover -> highlight the shape
@@ -422,6 +435,7 @@ server <- function(input, output, session) {
       r$units[r$units$unit_id == clicked_unit, 'selected'] = !r$units[r$units$unit_id == clicked_unit,]$selected
       r$units[r$units$unit_id == clicked_unit, 'updated'] = T
     }
+    mapNeedsUpdate()
   })
 
   # r$selected_entity watcher: entity selection changed - update blocks
@@ -437,6 +451,7 @@ server <- function(input, output, session) {
       previously_highlighted = rep(r$units$highlighted)
       r$units$highlighted = r$units$entity_id == selected_entity | selected_entity == NONE_SELECTED
       r$units$updated = r$units$updated | (r$units$highlighted != previously_highlighted)
+      mapNeedsUpdate()
     })
   })
 
@@ -479,15 +494,20 @@ server <- function(input, output, session) {
         )
     }
     # always draw entities on top
-    capacity_warning = r$entities %>% as.data.frame() %>%
-      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
-      mutate(utilization=pop/capacity, warning=ifelse(utilization < MIN_UTILIZATION, 'under-capacity', ifelse(utilization > MAX_UTILIZATION, 'over-capacity', ''))) %>% .$warning
-    warning_radius = r$entities %>% as.data.frame() %>%
-      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population))) %>%
-      mutate(utilization=pop/capacity,
-             utilization_diff=abs(utilization-1),
-             warning_radius=pmax(7, pmin(12, scales::rescale(utilization_diff, c(7, 12), c(0.1, 1))))) %>%
-      .$warning_radius
+    flog.debug('Calculating entities for map')
+    df = entities_df %>%
+      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population)), by='entity_id') %>%
+      mutate(utilization=pop/capacity)
+    capacity_warning = df %>%
+      mutate(
+        warning=ifelse(utilization < MIN_UTILIZATION, 'under-capacity', ifelse(utilization > MAX_UTILIZATION, 'over-capacity', ''))
+        ) %>% .$warning
+    warning_radius = df %>%
+      mutate(
+        utilization_diff=abs(utilization-1),
+        warning_radius=pmax(7, pmin(12, scales::rescale(utilization_diff, c(7, 12), c(0.1, 1))))
+        ) %>% .$warning_radius
+    flog.debug('Drawing entities for map')
     map = map %>%
       addCircleMarkers(
         data=r$entities, group='entities-warning', layerId=~paste0('entity_warning_', entity_id),
@@ -518,12 +538,10 @@ server <- function(input, output, session) {
   })
 
   # incremental map update
-  observe({
+  observeEvent(r$map_rev, {
     updated_units = r$units[r$units$updated,]
     show_population = input$show_population
-    isolate({
-      leafletProxy("map") %>% updateMap(updated_units, show_population)
-    })
+    leafletProxy("map") %>% updateMap(updated_units, show_population)
     r$units$updated = F
     flog.debug('Map updated')
   })
@@ -561,7 +579,7 @@ server <- function(input, output, session) {
   
   is_optim_solution_updated = function() {
     # TODO talk to python
-    if (resolved(ga$population_future)) {
+    if (resolved(ga$population_future) & (r$optimization_step != 0)) {
       future_population = value(ga$population_future)
       !is.null(future_population)
     } else FALSE
@@ -581,7 +599,7 @@ server <- function(input, output, session) {
     if (r$running_optimization) {
       isolate({
         # Start initial optimization step # TODO this should happen in Python automatically
-        if (resolved(ga$population_future) & is.null(value(ga$population_future))) {
+        if (resolved(ga$population_future) & (r$optimization_step == 0)) {
           r$optimization_step = r$optimization_step + 1
           next_optimization_step(r$optimization_step)
         }
@@ -602,8 +620,8 @@ server <- function(input, output, session) {
           r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
           r$units$updated = r$units$updated | r$units$entity_id != prev_entities
             
-          r$assignment_rev = r$assignment_rev + 1
-          
+          tableNeedsUpdate()
+
           # Start new optimization step # TODO this should happen in Python automatically
           next_optimization_step(r$optimization_step)
         } # otherwise just skip and do nothing in this iteration
