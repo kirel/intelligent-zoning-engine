@@ -796,7 +796,7 @@ server <- function(input, output, session) {
 
   reactive_table_data = reactive({
     rev = r$assignment_rev # recalculate if assignment_rev is altered
-    isolate(r$units) %>% as_data_frame() %>%
+    isolate(r$units) %>% as.data.frame() %>%
       filter(entity_id != NO_ASSIGNMENT) %>%
       left_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
