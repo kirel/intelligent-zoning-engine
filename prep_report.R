@@ -43,6 +43,8 @@ optimizable_units = units %>%
   .$unit_id %>%
   unique()
 
+addresses = readOGR(file.path(data_path, 'addresses.geojson'), 'OGRGeoJSON', stringsAsFactors = FALSE)
+
 # Map ---------------------------------------------------------------------
 
 map_path = file.path(data_path, 'berlin.rds')
@@ -73,6 +75,7 @@ rmarkdown::render(
   file.path("app", "templates", "assignment_report_de.Rmd"),
   params = list(
     map = berlin,
+    addresses = addresses,
     units = units,
     entities = entities,
     NO_ASSIGNMENT = NO_ASSIGNMENT,

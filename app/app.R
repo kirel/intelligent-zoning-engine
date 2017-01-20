@@ -28,6 +28,8 @@ entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFacto
 weights = read_csv('data/weights.csv')
 adjacency = read_csv('data/adjacency.csv', col_types ='cc')
 
+addresses = readOGR('data/addresses.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+
 # Add coordinates to adjacency data frame - just for debugging / visualization
 row.names(units) = units$unit_id
 adjacency = adjacency %>%
@@ -1009,6 +1011,7 @@ server <- function(input, output, session) {
         envir = new.env(parent = globalenv()),  # isolate rendering
         params = list(
           map = berlin,
+          addresses = addresses,
           units = r$units,
           entities = r$entities,
           NO_ASSIGNMENT = NO_ASSIGNMENT,
