@@ -162,8 +162,8 @@ ui <- fillPage(
                             h4(id='detail--units--selected-units', uiOutput('selected_units')),
                             div(id='detail--units--controls',
                                 actionButton('deselect_units', '', icon=icon('remove')),
-                                actionButton('assign_units', '', icon=icon('link')),
-                                actionButton('deassign_units', '', icon=icon('unlink')),
+                                actionButton('assign_units', '', icon=tags$i(class='icon-link-unit')),
+                                actionButton('deassign_units', '', icon=tags$i(class='icon-unlink-unit')),
                                 actionButton('lock_units', '', icon=icon('lock')),
                                 actionButton('unlock_units', '', icon=icon('unlock'))
                             ),

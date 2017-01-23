@@ -173,3 +173,38 @@ body {
 #about--logos img {
   max-height: 80px;
 }
+
+/*** icons ***/
+
+@font-face {
+  font-family: 'icozone';
+  src:  url('fonts/icozone.eot?u0mrzg');
+  src:  url('fonts/icozone.eot?u0mrzg#iefix') format('embedded-opentype'),
+    url('fonts/icozone.ttf?u0mrzg') format('truetype'),
+    url('fonts/icozone.woff?u0mrzg') format('woff'),
+    url('fonts/icozone.svg?u0mrzg#icozone') format('svg');
+  font-weight: normal;
+  font-style: normal;
+}
+
+[class^="icon-"], [class*=" icon-"] {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: 'icozone' !important;
+  speak: none;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.icon-unlink-unit:before {
+  content: "\e900";
+}
+.icon-link-unit:before {
+  content: "\e901";
+}
