@@ -49,3 +49,4 @@ def read_data(folder, measurement='max'):
     adj_mat[df_adj_mat[0], df_adj_mat[1]] = 1
 
     return units_id, entities_id, weights_mat, entities_capacity, units_population, adj_mat
+
