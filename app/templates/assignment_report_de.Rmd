@@ -6,10 +6,12 @@ output: pdf_document
 header-includes:
   - \usepackage{booktabs}
   - \usepackage{xcolor}
+  - \usepackage{longtable}
   - \definecolor{BrewerRed}{HTML}{E41A1C}
 classoption: a4paper
 params:
   map: ""
+  addresses: ""
   units: ""
   entities: ""
   weights: ""
@@ -23,6 +25,7 @@ params:
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 source('../io.R')
+source('../addresslist.R')
 ```
 
 ```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -122,19 +125,31 @@ print(xtable::xtable(tmp_tbl, digits = 1, align = c("l", "l", rep("r", times = 6
       sanitize.text.function = identity)
 ```
 
-## Schulen-Blöcke-Zuordnung
+## Adressliste
 
-```{r solution, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-entity_units <- params$units %>%
-  as.data.frame() %>%
-  dplyr::select(entity_id, unit_id) %>%
-  dplyr::group_by(entity_id) %>%
-  dplyr::summarise(unit_ids = paste(unit_id, sep = "", collapse = ", ")) %>%
-  dplyr::mutate(entity_id = ifelse(entity_id == params$NO_ASSIGNMENT,
-                                   'Keine Zuordnung', entity_id))
+```{r addresses, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+table = cbind(
+  as.data.frame(addresses),
+  over(addresses, generate_spatial_df(units, entities, weights, NO_ASSIGNMENT))
+  ) %>%
+  group_by(entity_id) %>%
+  do(data.frame(addresses=to_addresslist(.))) %>%
+  arrange(addresses) %>%
+  select(Straße=addresses, Schule=entity_id)
 
-for (i in 1:nrow(entity_units)) {
-  cat("**", entity_units[[i, "entity_id"]], ":**\n", sep = "")
-  cat(entity_units[[i, "unit_ids"]], "\n\n", sep = "")
-}
+print(
+  xtable::xtable(table[!is.na(table$Schule),], align='lp{12cm}r'),
+  include.rownames = FALSE, comment = FALSE,
+  tabular.environment="longtable", floating=FALSE
+)
+```
+
+### Ohne Zuordnung
+
+```{r addresses-na, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+print(
+  xtable::xtable(table[is.na(table$Schule), c('Straße')], align='lp{14cm}'),
+  include.rownames = FALSE, comment = FALSE,
+  tabular.environment="longtable", floating=FALSE
+)
 ```

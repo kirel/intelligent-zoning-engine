@@ -4,5 +4,5 @@ Diese Demoversion der Software basiert vollständig auf Open Data.
 
 <div id="about--logos">
   <a href="http://idalab.de"><img src="idalab_black_RGB.png" alt="idalab GmbH Logo" id="about--idalab-logo"></a>
-  <img src="ODINE_LOGO_RGB.png" alt="ODINE Logo" id="about--odine-logo">
+  <img src="ODINE_Logo_RGB.png" alt="ODINE Logo" id="about--odine-logo">
 </div>

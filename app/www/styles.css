@@ -6,7 +6,19 @@ body {
 /*** Map ***/
 
 #map-panel {
+<<<<<<< HEAD
   height: calc(100% - 400px);
+=======
+  height: calc(100% - 270px);
+}
+
+#map .entity {
+  stroke-width: 2;
+}
+
+#map .entity.selected {
+  stroke-width: 4;
+>>>>>>> master
 }
 
 #map-panel .capacity-indicator {
@@ -316,5 +328,10 @@ body {
 }
 
 #about--logos img {
+<<<<<<< HEAD
   max-height: 100px;
 }
+=======
+  max-height: 80px;
+}
+>>>>>>> master
