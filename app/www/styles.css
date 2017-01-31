@@ -1,6 +1,5 @@
 body {
   min-width: 1200px;
-
 }
 
 /*** Map ***/
@@ -263,7 +262,9 @@ body {
 
 
 #detail--units--controls{
-  padding-bottom:10px;
+  /*padding-bottom:10px;*/
+  margin: 0 0 0 0 !important;
+  height: 0;
 }
 
 #detail--entity{
@@ -443,4 +444,23 @@ body {
 
 #about--logos img {
   max-height: 100px;
+}
+
+#io {
+  padding:50px 0px 0px 15px;
+}
+
+#optimize {
+  margin: 30px 0px 0px 0px;
+}
+
+#about {
+  margin: 30px 15px 0px 15px;
+}
+
+#about p:nth-child(2) {
+  font-style: italic;
+}
+#about--logos {
+  margin: 50px 0 0 0;
 }

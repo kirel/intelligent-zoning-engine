@@ -218,6 +218,18 @@ body {
   }
 }
 
+@media all and (max-width: 1600px) {
+  #detail--units h4 {
+    font-size: 1.2em;
+  }
+}
+
+@media all and (max-width: 1300px) {
+  #assign_units, #deassign_units, #lock_units, #unlock_units {
+    height: 30px;
+    width: 50px;
+  }
+}
 
 #detail {
   padding: 10px 0px 10px 10px;
