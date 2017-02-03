@@ -1,5 +1,5 @@
+import multiprocessing
 import numpy as np
-import pandas as pd
 
 import igraph
 
@@ -11,8 +11,8 @@ OVER_CAPACITY_PENALTY = 1
 UNDER_CAPACITY_PENALTY = 1
 
 DIST_WEIGHT = 1 / 1000 ** 2
-OVER_CAPACITY_WEIGHT = 1 #/ 200
-UNDER_CAPACITY_WEIGHT = 1 #/ 200
+OVER_CAPACITY_WEIGHT = 1 / 200
+UNDER_CAPACITY_WEIGHT = 1 / 200
 
 
 def clone_population(population):
@@ -231,9 +231,9 @@ def crossover(ind_a, ind_b, locked):
     Returns: 2 children
 
     """
-    import ipdb; ipdb.set_trace()
+
     diffs = np.logical_not(np.equal(ind_a, ind_b).prod(axis=1))
-    diffs_ind = np.where(diffs == 0)
+    diffs_ind = np.where(diffs == 1)
     allowed_diffs = np.array(list(set(diffs_ind[0]) - set(locked)))
     num_diffs = allowed_diffs.shape[0]
 
@@ -272,7 +272,7 @@ def get_prob_from_fitness(population):
     return probs
 
 
-def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100, num_pairs=50):
+def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=50, num_pairs=20):
     """This function breeds the current population to generate the new population.
     The new population consists of the old population, the mutations and the children.
 
@@ -350,6 +350,43 @@ def optimization_step(population, num_steps, locked=[]):
     mutation_frac = max(0.1, 1. - num_steps / 3.)
 
     new_population = breed(population[:], hueristic_exponent, mutation_frac, locked)
-    survivors = select(new_population)
 
-    return survivors
+    return new_population
+
+
+def multi_process_optimization(args):
+    return optimization_step(*args)
+
+
+def do_multiprocess(function_args, num_processes):
+    """ processes the_args
+        :param function:
+        :param function_args:
+        :param num_processes: how many pararell processes we want to run.
+    """
+
+    pool = multiprocessing.Pool(processes=num_processes)
+    results_list = pool.map(multi_process_optimization, function_args)
+    pool.close()
+    pool.join()
+
+    return results_list
+
+
+def optimization_step_multiprocess(population, num_steps, num_processes=1, locked=[]):
+    if num_processes == 1 or len(population) < num_processes:
+        new_population = optimization_step(population, num_steps, locked=[])
+
+    else:
+        args_multi = []
+        indices = range(len(population))
+        inputs = [indices[i:i + int(len(population) / num_processes)] for i in
+                  range(0, len(indices), int(len(population) / num_processes))]
+        for input_indices in inputs:
+            args_multi.append((population[list(input_indices)[0]:list(input_indices)[-1] + 1], num_steps, locked))
+
+        populations = do_multiprocess(args_multi, num_processes)
+
+        new_population = [individual for individual in population for population in populations]
+
+    return select(new_population)
