@@ -128,7 +128,7 @@ def fitness(assignment, use_coherence_cost=0):
     distance_val = np.sum(np.multiply(assignment, weights) ** 2)
 
     # handle adjecent units going to different entities
-    adj_val = sum(adj_mat) - np.sum((np.multiply(np.dot(adj_mat, assignment), assignment)) ** 2)
+    adj_val = np.sum(adj_mat) - np.sum((np.multiply(np.dot(adj_mat, assignment), assignment)) ** 2)
 
     if use_coherence_cost:
         coherence_cost = get_filtered_adj_components_num(assignment)
