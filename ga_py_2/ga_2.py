@@ -11,8 +11,8 @@ OVER_CAPACITY_PENALTY = 1
 UNDER_CAPACITY_PENALTY = 1
 
 DIST_WEIGHT = 1 / 1000 ** 2
-OVER_CAPACITY_WEIGHT = 1 / 200
-UNDER_CAPACITY_WEIGHT = 1 / 200
+OVER_CAPACITY_WEIGHT = 1 #/ 200
+UNDER_CAPACITY_WEIGHT = 1 #/ 200
 
 
 def clone_population(population):
@@ -61,7 +61,7 @@ def initialize_individual(num_units, num_entities):
 
     """
 
-    assigns = np.random.randint(0, num_entities, num_units)
+    assigns = weights.argmin(axis=1)
     assign_mat = np.zeros((num_units, num_entities))
     assign_mat[np.arange(num_units), assigns] = 1.
 
@@ -231,7 +231,7 @@ def crossover(ind_a, ind_b, locked):
     Returns: 2 children
 
     """
-
+    import ipdb; ipdb.set_trace()
     diffs = np.logical_not(np.equal(ind_a, ind_b).prod(axis=1))
     diffs_ind = np.where(diffs == 0)
     allowed_diffs = np.array(list(set(diffs_ind[0]) - set(locked)))
@@ -296,15 +296,16 @@ def breed(population, hueristic_exponent, mutation_frac, locked, num_mutants=100
 
     sampled_population_ind = np.random.choice(np.arange(len(population)), num_mutants, True, probs)
     mutated_population = mutation(clone_population(population), sampled_population_ind, mutation_frac,
-                                  hueristic_exponent, allowed_indices, mutate_individual_borders)
+                                  hueristic_exponent, allowed_indices, mutate_individual)
 
     mating_population = clone_population(population) + clone_population(mutated_population)
 
     # calculate probability to chose each individual in the mating population for mating
     probs_mating = get_prob_from_fitness(mating_population)
-    pairs = [np.random.choice(np.arange(len(mating_population)), 2, False, probs_mating) for i in range(num_pairs)]
 
     mated = []
+    pairs = [np.random.choice(np.arange(len(mating_population)), 2, False, probs_mating) for i in range(num_pairs)]
+
     for pair in pairs:
         mating_res = crossover(mating_population[pair[0]], mating_population[pair[1]], locked)
         if len(mating_res) > 0:
@@ -333,7 +334,7 @@ def select(population, survival_fraction=0.5, max_population=50):
     return survivors
 
 
-def optimization_step(population, num_steps, locked=[1, 500, 88, 94, 456, 330]):
+def optimization_step(population, num_steps, locked=[]):
     """This function performs one optimization step - breeds new population,
     select the best candidates from it and writes the best individual to the data base.
 
