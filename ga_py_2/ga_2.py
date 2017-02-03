@@ -13,6 +13,18 @@ UNDER_CAPACITY_PENALTY = 1
 DIST_WEIGHT = 1 / 1000 ** 2
 OVER_CAPACITY_WEIGHT = 1 / 200
 UNDER_CAPACITY_WEIGHT = 1 / 200
+ADJ_WEIGHT = 0 #- 1 / 100
+
+
+def update_penalties(new_penalties):
+    global DIST_WEIGHT
+    DIST_WEIGHT = new_penalties[0]
+    global OVER_CAPACITY_WEIGHT
+    OVER_CAPACITY_WEIGHT = new_penalties[0]
+    global UNDER_CAPACITY_WEIGHT
+    UNDER_CAPACITY_WEIGHT = new_penalties[0]
+    global ADJ_WEIGHT
+    ADJ_WEIGHT = new_penalties[0]
 
 
 def clone_population(population):
@@ -115,13 +127,16 @@ def fitness(assignment, use_coherence_cost=0):
 
     distance_val = np.sum(np.multiply(assignment, weights) ** 2)
 
+    # handle adjecent units going to different entities
+    adj_val = np.sum((np.multiply(np.dot(adj_mat, assignment), assignment)) ** 2)
+
     if use_coherence_cost:
         coherence_cost = get_filtered_adj_components_num(assignment)
     else:
         coherence_cost = 0
 
     return distance_val * DIST_WEIGHT + np.sum(over_cap_vec) * OVER_CAPACITY_WEIGHT + \
-           np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT + coherence_cost
+           np.sum(under_cap_vec) * UNDER_CAPACITY_WEIGHT + coherence_cost + ADJ_WEIGHT * adj_val
 
 
 def mutation(population, sampled_population_ind, mutation_frac, hueristic_exponent, allowed_indices, ind_mutation_func):
@@ -334,7 +349,7 @@ def select(population, survival_fraction=0.5, max_population=50):
     return survivors
 
 
-def optimization_step(population, num_steps, locked=[]):
+def optimization_step(population, num_steps, locked=[], fir_func_ind=0):
     """This function performs one optimization step - breeds new population,
     select the best candidates from it and writes the best individual to the data base.
 
