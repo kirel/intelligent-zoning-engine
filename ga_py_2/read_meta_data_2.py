@@ -38,14 +38,15 @@ def read_data(folder, measurement='max'):
     # only use population of units that are in the weights matrix
     df_units = df_units[df_units['unit_id'].isin(units_id)]
     units_population = df_units.iloc[:, 1].as_matrix()
-
+    
     # read adjacencies and construct adjecency matrix
     df_adj = pd.read_csv(os.path.join(folder, 'adjacency.csv'))
-    df_adj = df_adj[df_adj['from'].isin(units_id) & df_adj['to'].isin(units_id)]
+    units_id_int = [int(id) for id in units_id]
+    df_adj_filtered = df_adj[df_adj['from'].isin(units_id_int) & df_adj['to'].isin(units_id_int)]
     num_units = len(units_id)
-    adj_mat = np.empty((num_units, num_units)).astype(int)
-    units_dict = {u_id: i for i, u_id in enumerate(units_id)}
-    df_adj_mat = df_adj.replace(units_dict).values.T
+    adj_mat = np.zeros((num_units, num_units)).astype(int)
+    units_dict = {u_id: i for i, u_id in enumerate(units_id_int)}
+    df_adj_mat = df_adj_filtered.replace(units_dict).values.T
     adj_mat[df_adj_mat[0], df_adj_mat[1]] = 1
 
     return units_id, entities_id, weights_mat, entities_capacity, units_population, adj_mat
