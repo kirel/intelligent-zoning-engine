@@ -39,7 +39,7 @@ if __name__ == '__main__':
     dist_weights = [1 / 1000 ** 2, 1 / 1000, 0, 1, 1 / 1000]
     over_cap_weights = [1 / 200, 1 / 20, 0, 1 , 1 / 10, 1 / 500]
     under_cap_weights = [1 / 200, 1 / 20, 0, 1 , 1 / 10, 1 / 500]
-    adj_weight = [- 1 / 100, -1 / 10, 0, -1, - 1 / 2, - 1 / 1000, -1 / 1000000]
+    adj_weight = [1, 1 / 10, 10, 1/ 100, 100, 1000, 1 / 1000]
 
     for dw in dist_weights:
         for ocw in over_cap_weights:
