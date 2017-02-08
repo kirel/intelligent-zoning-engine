@@ -16,7 +16,7 @@ UNDER_CAPACITY_WEIGHT = 1 / 200
 ADJ_WEIGHT = 1 / (10000 ** 2)
 
 ADJ_MAT_SUM = np.sum(adj_mat)
-UNIT_NBR_NUM = np.sum(adj_mat, axis=0)
+UNIT_NBR_NUM = np.sum(adj_mat, axis=0) + 1.
 
 def update_penalties(new_penalties):
     global DIST_WEIGHT
@@ -131,10 +131,10 @@ def fitness(assignment, use_coherence_cost=0):
 
     # each cell in the matrix count how many neighbors of unit go to entity if unit goe to entity
     num_neighboring = np.multiply(np.dot(adj_mat, assignment), assignment)
-    num_neighboring_vec = num_neighboring[num_neighboring > 0]
+    num_neighboring[np.where(assignment > 0)] += 1
     # normalize by the number of the unit's neighbors
-    num_neighboring_vec_av = np.divide(num_neighboring_vec, UNIT_NBR_NUM)
-    adj_val = np.sum((1. - num_neighboring_vec_av) ** 2)
+    num_neighboring_av = np.divide(num_neighboring.T, UNIT_NBR_NUM).T
+    adj_val = np.sum((1. - num_neighboring_av) ** 2)
 
     if use_coherence_cost:
         coherence_cost = get_filtered_adj_components_num(assignment)
