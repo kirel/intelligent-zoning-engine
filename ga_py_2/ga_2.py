@@ -131,9 +131,9 @@ def fitness(assignment, use_coherence_cost=0):
 
     # each cell in the matrix count how many neighbors of unit go to entity if unit goe to entity
     num_neighboring = np.multiply(np.dot(adj_mat, assignment), assignment)
-    num_neighboring[np.where(assignment > 0)] += 1
+    num_neighboring_vec = num_neighboring[np.where(assignment > 0)] + 1
     # normalize by the number of the unit's neighbors
-    num_neighboring_av = np.divide(num_neighboring.T, UNIT_NBR_NUM).T
+    num_neighboring_av = np.divide(num_neighboring_vec, UNIT_NBR_NUM)
     adj_val = np.sum((1. - num_neighboring_av) ** 2)
 
     if use_coherence_cost:
