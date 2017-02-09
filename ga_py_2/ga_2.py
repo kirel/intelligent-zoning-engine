@@ -13,20 +13,22 @@ UNDER_CAPACITY_PENALTY = 1
 DIST_WEIGHT = 1 / 1000 ** 2
 OVER_CAPACITY_WEIGHT = 1 / 200
 UNDER_CAPACITY_WEIGHT = 1 / 200
-ADJ_WEIGHT = 1 / (10000 ** 2)
+ADJ_WEIGHT = 1 / 10
 
 ADJ_MAT_SUM = np.sum(adj_mat)
-UNIT_NBR_NUM = np.sum(adj_mat, axis=0) + 1.
+UNIT_NBR_NUM = np.sum(adj_mat, axis=0)
+NBR_IND = np.where(UNIT_NBR_NUM > 0)
+
 
 def update_penalties(new_penalties):
     global DIST_WEIGHT
     DIST_WEIGHT = new_penalties[0]
     global OVER_CAPACITY_WEIGHT
-    OVER_CAPACITY_WEIGHT = new_penalties[0]
+    OVER_CAPACITY_WEIGHT = new_penalties[1]
     global UNDER_CAPACITY_WEIGHT
-    UNDER_CAPACITY_WEIGHT = new_penalties[0]
+    UNDER_CAPACITY_WEIGHT = new_penalties[2]
     global ADJ_WEIGHT
-    ADJ_WEIGHT = new_penalties[0]
+    ADJ_WEIGHT = new_penalties[3]
 
 
 def clone_population(population):
@@ -131,9 +133,9 @@ def fitness(assignment, use_coherence_cost=0):
 
     # each cell in the matrix count how many neighbors of unit go to entity if unit goe to entity
     num_neighboring = np.multiply(np.dot(adj_mat, assignment), assignment)
-    num_neighboring[np.where(assignment > 0)] += 1
+    num_neighboring_vec = num_neighboring[np.where(assignment > 0)] + 1
     # normalize by the number of the unit's neighbors
-    num_neighboring_av = np.divide(num_neighboring.T, UNIT_NBR_NUM).T
+    num_neighboring_av = np.divide(num_neighboring_vec[NBR_IND], UNIT_NBR_NUM[NBR_IND])
     adj_val = np.sum((1. - num_neighboring_av) ** 2)
 
     if use_coherence_cost:
@@ -372,7 +374,7 @@ def optimization_step(population, num_steps, locked=[], fir_func_ind=0):
 
     new_population = breed(population[:], hueristic_exponent, mutation_frac, locked)
 
-    return new_population
+    return select(new_population)
 
 
 def multi_process_optimization(args):
