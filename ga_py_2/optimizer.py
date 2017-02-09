@@ -8,12 +8,13 @@ from read_meta_data_2 import read_data
 
 class optimizer:
     def __init__(self):
-        self.units, self.entities, self.weights, self.capacity, self.units_population, self.adj_mat = read_data('../app/data', 'max')
+        self.units, self.entities, self.weights, self.capacity, self.units_population, self.adj_mat = read_data(
+                '../app/data', 'max')
 
         self.DIST_WEIGHT = 1 / 1000 ** 2
         self.OVER_CAPACITY_WEIGHT = 1 / 200
         self.UNDER_CAPACITY_WEIGHT = 1 / 200
-        self.ADJ_WEIGHT = 1 / (10000 ** 2)
+        self.ADJ_WEIGHT = 1 / 10
 
         self.UNIT_NBR_NUM = np.sum(self.adj_mat, axis=0) + 1.
 
@@ -26,13 +27,43 @@ class optimizer:
         self.population_size = 50
         self.survival_fraction = 0.5
 
-        #self.initialize_population()
+        self.locked = []
+        self.unlocked_ind = list(range(self.num_entities))
+
+        # self.initialize_population()
 
     def set_penalties(self, new_penalties):
         self.DIST_WEIGHT = new_penalties[0]
         self.OVER_CAPACITY_WEIGHT = new_penalties[0]
         self.UNDER_CAPACITY_WEIGHT = new_penalties[0]
         self.ADJ_WEIGHT = new_penalties[0]
+
+    def set_assignment(self, assignment):
+        """
+
+        Args:
+            assignment: np array entities x units that represents a valid assignment
+
+        Returns:
+
+        """
+        self.initialize_population()
+        self.population[0] = np.copy(assignment)
+
+    def set_locked(self, locked_units):
+        """
+
+        Args:
+            locked_ent: list of entities whos assignment should not be changed
+
+        Returns:
+
+        """
+        if locked_units == []:
+            return
+
+        self.locked_ind = [np.where(self.units == locked_unit)[0][0] for locked_unit in locked_units]
+        self.unlocked_ind = list(set(range(self.num_units)) - set(self.locked_ind))
 
     def get_current_solution(self):
         best_assign = self.population[0]
@@ -249,21 +280,21 @@ class optimizer:
 
         # calculate mutation probability for each unit.
         # hueristic_exponen allows mutating with high prob units with large distances.
-        fitness_vals_normed = (np.multiply(individual, self.weights).sum(axis=1) / np.max(self.weights))
+        fitness_vals_normed = (np.multiply(individual, self.weights).sum(axis=1) / np.max(self.weights))[
+            self.unlocked_ind]
 
         exploration_fitness_vals = fitness_vals_normed ** self.hueristic_exponent
         mutation_prob = exploration_fitness_vals / np.sum(exploration_fitness_vals)
 
         # chose which rows to mutate based on the mutation probability
-        mutated_units = np.random.choice(self.num_units, self.num_mutations, False, mutation_prob)
+        mutated_units = np.random.choice(self.unlocked_ind, self.num_mutations, False, mutation_prob)
         new_entities = np.random.randint(0, self.num_entities, len(mutated_units))
         individual[mutated_units, :] = 0.
         individual[mutated_units, new_entities] = 1.
 
         return individual
 
-    @staticmethod
-    def crossover(ind_a, ind_b):
+    def crossover(self, ind_a, ind_b):
         """This function mates between two individuals and creates two children using swap strategie.
 
         Args:
@@ -273,10 +304,11 @@ class optimizer:
         Returns: 2 children
 
         """
-        #import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         diffs = np.logical_not(np.equal(ind_a, ind_b).prod(axis=1))
         diffs_ind = np.where(diffs == 1)
-        num_diffs = diffs_ind[0].shape[0]
+        allowed_diffs = np.array(list(set(diffs_ind[0]) - set(self.locked_ind)))
+        num_diffs = allowed_diffs.shape[0]
 
         # don't swap if the assignment of the individuals is identical
         if num_diffs == 0:
@@ -288,7 +320,7 @@ class optimizer:
         # chose randomly which units to swap
         fraction = np.random.rand(1)
         num_genes = int(fraction * num_diffs)
-        swap_ind = np.random.choice(np.arange(ind_a.shape[0])[diffs_ind], num_genes)
+        swap_ind = np.random.choice(np.arange(ind_a.shape[0])[allowed_diffs], num_genes)
 
         child_a[swap_ind] = ind_b[swap_ind]
         child_b[swap_ind] = ind_a[swap_ind]
