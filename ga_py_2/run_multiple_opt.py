@@ -18,11 +18,12 @@ def run_opt(new_penalties):
     init_pop = [initialize_individual(num_units, num_entities) for i in range(50)]
     pop = init_pop[:]
 
-    iterations_num = 200
+    iterations_num = 36000
 
     fitness_res = []
     for i in range(iterations_num):
-        new_pop = optimization_step_multiprocess(pop[:], num_steps, 1)
+        print(i)
+        new_pop = optimization_step(pop[:], num_steps)
 
         best_solution = new_pop[0]
         score = np.sum(fitness(best_solution))
@@ -39,16 +40,17 @@ if __name__ == '__main__':
     dist_weights = [1 / 1000 ** 2, 1 / 1000, 0, 1, 1 / 1000]
     over_cap_weights = [1 / 200, 1 / 20, 0, 1 , 1 / 10, 1 / 500]
     under_cap_weights = [1 / 200, 1 / 20, 0, 1 , 1 / 10, 1 / 500]
-    adj_weight = [1, 1 / 10, 10, 1/ 100, 100, 1000, 1 / 1000]
+    adj_weight = [ 1 / 10, 10, 1/ 100, 100, 1000, 1 / 1000, 1, 0]
 
     for dw in dist_weights:
         for ocw in over_cap_weights:
             for ucw in under_cap_weights:
                 for aw in adj_weight:
                     new_penalties = [dw, ocw, ucw, aw]
-                    fitness, sol = run_opt(new_penalties)
+                    print(new_penalties)
+                    score, sol = run_opt(new_penalties)
 
-                    to_save = {'penalties': new_penalties, 'fitness': fitness, 'best_solution': sol}
+                    to_save = {'penalties': new_penalties, 'fitness_score': score, 'best_solution': sol}
 
                     file_name = time.strftime("%Y%m%d-%H%M%S")
 
