@@ -374,7 +374,7 @@ def optimization_step(population, num_steps, locked=[], fir_func_ind=0):
 
     new_population = breed(population[:], hueristic_exponent, mutation_frac, locked)
 
-    return new_population
+    return select(new_population)
 
 
 def multi_process_optimization(args):
