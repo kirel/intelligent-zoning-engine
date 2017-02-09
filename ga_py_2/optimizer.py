@@ -38,18 +38,6 @@ class optimizer:
         self.UNDER_CAPACITY_WEIGHT = new_penalties[0]
         self.ADJ_WEIGHT = new_penalties[0]
 
-    def set_assignment(self, assignment):
-        """
-
-        Args:
-            assignment: np array entities x units that represents a valid assignment
-
-        Returns:
-
-        """
-        self.initialize_population()
-        self.population[0] = np.copy(assignment)
-
     def set_locked(self, locked_units):
         """
 
@@ -62,14 +50,14 @@ class optimizer:
         if locked_units == []:
             return
 
-        self.locked_ind = [np.where(self.units == locked_unit)[0][0] for locked_unit in locked_units]
+        self.locked_ind = np.copy(locked_units)
         self.unlocked_ind = list(set(range(self.num_units)) - set(self.locked_ind))
 
     def get_current_solution(self):
         best_assign = self.population[0]
         return best_assign, self.fitness(best_assign)
 
-    def initialize_population(self):
+    def initialize_population(self, assignment=[]):
         """
 
         Args:
@@ -80,8 +68,12 @@ class optimizer:
         """
         self.population = []
 
-        for i in range(self.population_size):
-            self.population.append(self.initialize_individual())
+        if assignment == []:
+            for i in range(self.population_size):
+                self.population.append(self.initialize_individual())
+        else:
+            for i in range(self.population_size):
+                self.population.append(np.copy(assignment))
 
     def initialize_individual(self):
         """This function initialize a random assignment
