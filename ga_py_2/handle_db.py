@@ -25,7 +25,7 @@ def create_db():
     Returns:
 
     """
-    init_assignment = pd.read_csv('../app-data/assignment.csv')
+    init_assignment = pd.read_csv('../app/data/assignment.csv', dtype=object)
     init_assignment.set_index('unit_id')
 
     conn = sqlite3.connect(sqlite_file, timeout=TIMEOUT)
@@ -34,13 +34,17 @@ def create_db():
 
     c.execute("CREATE TABLE {tn} ({nf} {ft})".
               format(tn=time_stamp_table_name, nf=time_column, ft='INT'))
+
+    c.execute("ALTER TABLE {tn} ADD COLUMN '{cn}' {ct}"\
+        .format(tn=time_stamp_table_name, cn=score_column, ct='REAL'))
+
     c.execute("CREATE TABLE {tn} ({nf} {ft})".
               format(tn=instructions_table_name, nf=instruction_column, ft='TEXT'))
     conn.commit()
     conn.close()
 
-    set_assignment(init_assignment)
-    set_assignment(init_assignment, input_table_name)
+    set_assignment(init_assignment, 1000)
+    set_assignment(init_assignment, 1000, input_table_name)
 
     return
 
