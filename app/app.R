@@ -855,8 +855,9 @@ server <- function(input, output, session) {
     data = isolate(renamed_table_data())
     
     data %>%
-      datatable(
-        options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
+      DT::datatable(
+        options=list(fixedHeader = T, processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
+        extensions='FixedHeader',
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
       formatPercentage(c('Auslastung', 'SGBII(u.65)'), digits = 2) %>%
