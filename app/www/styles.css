@@ -14,7 +14,6 @@ body {
 
 #map .entity.selected {
   stroke-width: 4;
->>>>>>> master
 }
 
 #map-panel .capacity-indicator {
@@ -362,7 +361,7 @@ body {
 #table-panel td:nth-child(1) .entity-color-indicator {
   display: inline-block;
   position: absolute;
-  width: 4px;
+  width: 5px;
   height: 100%;
   left: 0;
   top: 0;
