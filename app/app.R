@@ -1008,7 +1008,7 @@ server <- function(input, output, session) {
         'templates/assignment_report_de.Rmd',
         output_file = con,
         intermediates_dir = temp_dir,
-        envir = new.env(parent = globalenv()),  # isolate rendering
+        envir = new.env(), # isolate rendering
         params = list(
           map = berlin,
           addresses = addresses,
