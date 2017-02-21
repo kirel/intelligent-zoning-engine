@@ -162,8 +162,8 @@ ui <- fillPage(
                             h4(id='detail--units--selected-units', uiOutput('selected_units')),
                             div(id='detail--units--controls',
                                 actionButton('deselect_units', '', icon=icon('remove')),
-                                actionButton('assign_units', '', icon=icon('link')),
-                                actionButton('deassign_units', '', icon=icon('unlink')),
+                                actionButton('assign_units', '', icon=tags$i(class='icon-link-unit')),
+                                actionButton('deassign_units', '', icon=tags$i(class='icon-unlink-unit')),
                                 actionButton('lock_units', '', icon=icon('lock')),
                                 actionButton('unlock_units', '', icon=icon('unlock'))
                             ),
@@ -855,8 +855,9 @@ server <- function(input, output, session) {
     data = isolate(renamed_table_data())
     
     data %>%
-      datatable(
-        options=list(processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
+      DT::datatable(
+        options=list(fixedHeader = T, processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
+        extensions='FixedHeader',
         selection=list(mode = 'single', selected = isolate(r$selected_school_index), target = 'row')
       ) %>%
       formatPercentage(c('Auslastung', 'SGBII(u.65)'), digits = 2) %>%
@@ -1008,7 +1009,7 @@ server <- function(input, output, session) {
         'templates/assignment_report_de.Rmd',
         output_file = con,
         intermediates_dir = temp_dir,
-        envir = new.env(parent = globalenv()),  # isolate rendering
+        envir = new.env(), # isolate rendering
         params = list(
           map = berlin,
           addresses = addresses,

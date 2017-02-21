@@ -437,13 +437,13 @@ Hash: 3d6e7608e65bbf5cb170dab1e3c9ed8b
 Package: leaflet
 Source: github
 Version: 1.0.2.9010
-Hash: aa828ae8a17f73e1dbf65bdf17a559d5
+Hash: 2cf78670d2b1e273ceb47a4beefba781
 Requires: RColorBrewer, base64enc, crosstalk, htmltools, htmlwidgets,
     magrittr, markdown, png, raster, scales, sp
 GithubRepo: leaflet
 GithubUsername: rstudio
 GithubRef: master
-GithubSha1: 7a8f0e78965767cebb0ce3d921377b96fe9c44c8
+GithubSha1: 9c81e607f7f92176120f91811d6f5cde9f0c8aa5
 
 Package: listenv
 Source: CRAN
