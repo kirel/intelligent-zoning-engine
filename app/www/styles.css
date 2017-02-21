@@ -82,21 +82,13 @@ body {
 }
 
 #table-panel td {
-  /*background-color: #ffffff !important;*/
   border-bottom: 5px solid;
   border-top: 5px solid;
   border-color:lightgrey;
-  ;
-  /*border-bottom: 10px solid white;*/
 }
 
-#table-panel tr td {
-  /*border-top-color:10px solid black;*/
-
-}
 
 #table-panel tr td:first-child {
-  /*border-top-color:10px solid black;*/
   border-left:8px solid lightgrey;
 
   -moz-border-radius-topleft: 11px;
@@ -107,7 +99,6 @@ body {
 }
 
 #table-panel tr td:last-child {
-  /*border-top-color:10px solid black;*/
   border-right:5px solid lightgrey;
 
   -moz-border-radius-topright: 8px;
