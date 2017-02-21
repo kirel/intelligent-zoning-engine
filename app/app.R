@@ -184,7 +184,7 @@ ui <- fillPage(
                                 ),
                       actionButton('reset_assignment', 'Reset', icon=icon('fast-backward'))
                   )),
-                  tabPanel("Optimierung", div(id='optimize',
+                  tabPanel("Optimierung", div(id='optimize-panel',
                       uiOutput('optimize_button', inline = TRUE),
                       plotOutput('fitness', height = '120px')
                   )),
@@ -217,7 +217,7 @@ server <- function(input, output, session) {
     running_optimization=FALSE,
     optimization_step=0,
     previous_mouseover=NONE_SELECTED)
-  
+
   # variables for R optimization implementation
   ga = reactiveValues(
     population_future=future(NULL),
@@ -227,12 +227,12 @@ server <- function(input, output, session) {
   mapNeedsUpdate = function() {
     r$map_rev = r$map_rev + 1
   }
-  
+
   tableNeedsUpdate = function() {
     r$assignment_rev = r$assignment_rev + 1
     mapNeedsUpdate()
   }
-  
+
   ### Interaction
 
   observeEvent(input$optimize, {
@@ -245,7 +245,7 @@ server <- function(input, output, session) {
       start_optimization(r$units)
     }
   })
-  
+
   observeEvent(input$assign_units, {
     flog.debug('Assign button pressed')
     r$units[r$units$selected, 'entity_id'] = r$selected_entity
@@ -254,7 +254,7 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$deassign_units, {
     flog.debug('Deassign button pressed')
     r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
@@ -263,14 +263,14 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$deselect_units, {
     flog.debug('Deselect button pressed')
     r$units[r$units$selected, 'updated'] = T
     r$units$selected = F
     tableNeedsUpdate()
   })
-  
+
   observeEvent(input$lock_units, {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
@@ -278,7 +278,7 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
@@ -286,15 +286,15 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$deselect_entity, {
     flog.debug('Deselect button pressed')
     r$selected_entity = NONE_SELECTED
     r$selected_entity_index = NULL
-  }) 
-  
+  })
+
   ### Map controls
-  
+
   observe({
     shinyjs::toggleClass("map-panel", "show-utilization", input$show_utilization)
   })
@@ -303,25 +303,25 @@ server <- function(input, output, session) {
     r$units$updated = T
     mapNeedsUpdate()
   })
-  
+
   ### selection status
-  
+
   observe({
-    shinyjs::toggleClass('map-panel', 'entity-selected', r$selected_entity != NONE_SELECTED) 
+    shinyjs::toggleClass('map-panel', 'entity-selected', r$selected_entity != NONE_SELECTED)
   })
-  
+
   observe({
-    shinyjs::toggleClass('map-panel', 'units-selected', sum(r$units$selected) > 0) 
+    shinyjs::toggleClass('map-panel', 'units-selected', sum(r$units$selected) > 0)
   })
-  
+
   ### Localstorage of assignment
-  
+
   observeEvent(input$reset_assignment, {
     shinyStore::updateStore(session, "assignment", NULL)
     r$units = units
     tableNeedsUpdate()
   })
-  
+
   observeEvent(r$assignment_rev, {
     if (r$assignment_rev == 0) {
       try(isolate({
@@ -334,7 +334,7 @@ server <- function(input, output, session) {
     }
     shinyStore::updateStore(session, "assignment", r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked) %>% serialize(NULL, ascii=T) %>% rawToChar)
   })
-  
+
   ### load assignment
 
   observeEvent(input$readAssignment, {
@@ -443,7 +443,7 @@ server <- function(input, output, session) {
   # r$selected_entity watcher: entity selection changed - update blocks
   observe({
     selected_entity = r$selected_entity
-    
+
     isolate({
       flog.debug("selected entity changed to %s from %s", r$selected_entity, r$previous_selected_entity)
 
@@ -525,7 +525,7 @@ server <- function(input, output, session) {
       )
     return(map)
   }
-  
+
   # Initial map render
   output$map <- renderLeaflet({
     isolate({
@@ -535,7 +535,7 @@ server <- function(input, output, session) {
         updateMap(r$units, input$show_population)
       r$units$updated = F
       flog.debug('Map initialized')
-      m      
+      m
     })
   })
 
@@ -549,7 +549,7 @@ server <- function(input, output, session) {
   })
 
   ### optimization
-  
+
   ## High level functions
   #
   # - start_optimization(new_assignment: data.frame(unit_id, entity_id, locked))
@@ -568,17 +568,17 @@ server <- function(input, output, session) {
     reset_ga_population(assignment)
     # actual optimization is started in main optimization loop # TODO should happen here for python
   }
-  
+
   reset_optimization = function(assignment) {
     if (r$running_optimization) {
       start_optimization(assignment)
     }
   }
-  
+
   stop_optimization = function() {
     # TODO talk to python
   }
-  
+
   is_optim_solution_updated = function() {
     # TODO talk to python
     if (resolved(ga$population_future) & (r$optimization_step != 0)) {
@@ -586,7 +586,7 @@ server <- function(input, output, session) {
       !is.null(future_population)
     } else FALSE
   }
-  
+
   get_optim_solution = function() {
     # TODO talk to python
     future_population = value(ga$population_future)
@@ -595,7 +595,7 @@ server <- function(input, output, session) {
     score = mem_fitness_f(fittest)
     list(solution=fittest, score=score)
   }
-  
+
   # main optimization loop
   observe({
     if (r$running_optimization) {
@@ -605,29 +605,29 @@ server <- function(input, output, session) {
           r$optimization_step = r$optimization_step + 1
           next_optimization_step(r$optimization_step)
         }
-        
+
         # get updated solution
         if (is_optim_solution_updated()) {
           flog.info('Finished optimization step %s', r$optimization_step)
           r$optimization_step = r$optimization_step + 1
-          
+
           solution = get_optim_solution()
 
           r$fittest_fitness = c(r$fittest_fitness, solution$score)
-          
+
           # update relevant values for ui updates
           prev_entities = r$units$entity_id
           new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>%
             left_join(solution$solution, by="unit_id") %>% .$entity_id
           r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
           r$units$updated = r$units$updated | r$units$entity_id != prev_entities
-            
+
           tableNeedsUpdate()
 
           # Start new optimization step # TODO this should happen in Python automatically
           next_optimization_step(r$optimization_step)
         } # otherwise just skip and do nothing in this iteration
-        
+
       })
       invalidateLater(100, session)
     }
@@ -639,7 +639,7 @@ server <- function(input, output, session) {
       geom_line(aes(x=seq_along(diff(r$fittest_fitness))+1, y=diff(r$fittest_fitness)*(-1)), linetype=2) +
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
-  
+
   if (DEBUG_ENV) {
     # after each assignment change plot the best solutions fitness
     observeEvent(r$assignment_rev, {
@@ -648,15 +648,15 @@ server <- function(input, output, session) {
         select(unit_id) %>%
         left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
         mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-      
+
       mem_fitness_f(current, verbose=T)
     })
   }
 
   ### genetic algorithm
-  
+
   ## R implementation of GA # TODO remove
-  
+
   reset_ga_population = function(assignment) {
     # select only blocks with stats and assign random schools for unassigned blocks
     current = units %>% as.data.frame() %>%
@@ -664,15 +664,15 @@ server <- function(input, output, session) {
       select(unit_id) %>%
       left_join(assignment %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
       mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-    
+
     ga$population = list(current)
   }
-  
+
   next_optimization_step = function(step) {
     heuristic_exponent = 20/step^(1) # TODO = 1/2?
     mutation_fraction = max(0.001, 1-(step-1)/3)
     flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', step, mutation_fraction, heuristic_exponent)
-    
+
     ga$population_future = future({
       ga_select(
         ga_breed(ga$population,
@@ -685,9 +685,9 @@ server <- function(input, output, session) {
                  heuristic_exponent = heuristic_exponent),
         mem_fitness_f,
         max_population = 50)
-    })  
+    })
   }
-  
+
   # randomly reassign a number of schools
   mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
@@ -735,23 +735,23 @@ server <- function(input, output, session) {
     DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
     OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
     UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
-    
+
     # TODO coherence cost as number of connected components
     filtered_edges = adjacency %>%
       inner_join(individual, by=c('from'='unit_id'), copy = T) %>%
       inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
       filter(entity_id == to_entity_id)
-    
+
     # browser() here to debug connected components with following plot:
     # ggplot() +
     #  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(units, region='unit_id')) +
     #  geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=filtered_edges) +
     #  theme_nothing() + coord_map()
-    
+
     optimum_connected_components = length(entity_ids)
     connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
     coherence_cost = connected_components/optimum_connected_components
-    
+
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
@@ -791,7 +791,7 @@ server <- function(input, output, session) {
   }
 
   mem_fitness_f = memoise(fitness_f)
-  
+
   ### /genetic algorithm
 
   ### table
@@ -815,7 +815,7 @@ server <- function(input, output, session) {
         utilization=pop/capacity
       )
   })
-  
+
   renamed_table_data = reactive({
       d = reactive_table_data() %>%
         select(
@@ -853,7 +853,7 @@ server <- function(input, output, session) {
   # initial table render (see later observe for update)
   output$table = DT::renderDataTable({
     data = isolate(renamed_table_data())
-    
+
     data %>%
       DT::datatable(
         options=list(fixedHeader = T, processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
@@ -903,9 +903,9 @@ server <- function(input, output, session) {
   })
 
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
-  
+
   ### Variables for detail views
-  
+
   warnIfGt = function(num, thres, s) {
     ifelse(num > thres, paste0('<div class="warning">',s,'</div>'), s)
   }
@@ -918,7 +918,7 @@ server <- function(input, output, session) {
       HTML('Keine ausgewählt')
     }
   })
-  
+
   output$selected_entity_table = renderTable({
     if (r$selected_entity != NONE_SELECTED) {
       d = reactive_table_data()[reactive_table_data()$entity_id == r$selected_entity,] %>%
@@ -941,7 +941,7 @@ server <- function(input, output, session) {
       'Keine ausgewählt'
     }
   })
-  
+
   output$selected_units_table = renderTable({
     if (sum(r$units$selected) > 0) {
       selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
@@ -954,7 +954,7 @@ server <- function(input, output, session) {
       t(selected_units_data)
     }
   }, colnames=F, rownames=T, spacing='xs', width='100%')
-  
+
   ### optimization
 
   output$optimize_button = renderUI({
@@ -963,11 +963,11 @@ server <- function(input, output, session) {
     } else {
       actionButton('optimize', label = 'Optimierung starten', icon = icon('play'))
     }
-    
+
   })
-  
+
   ### Export
-  
+
   output$serveAssignment = downloadHandler(
     filename = function() {
       paste0('assignment_', Sys.Date(), '.csv')
@@ -979,7 +979,7 @@ server <- function(input, output, session) {
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
     })
-  
+
   output$serveGeoJSON = downloadHandler(
     filename = function() {
       paste0('assignment_', Sys.Date(), '.geojson')
