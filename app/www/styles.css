@@ -5,7 +5,7 @@ body {
 /*** Map ***/
 
 #map-panel {
-  height: calc(100% - 500px);
+  height: calc(100% - 400px);
 }
 
 #map .entity {
@@ -119,7 +119,8 @@ body {
 
 .tab-pane{
   background-color: rgb(210, 218, 230);
-  height:500px;
+  height: 400px;
+  position: relative;
 }
 
 
@@ -230,7 +231,7 @@ body {
 }
 
 #detail {
-  padding: 10px 0px 10px 10px;
+  /* padding: 10px 0; */
 }
 
 #detail--units{
@@ -260,17 +261,18 @@ body {
 }
 
 
-#detail--units--controls{
+#detail--units--controls {
   /*padding-bottom:10px;*/
   margin: 0 0 0 0 !important;
   height: 0;
 }
 
-#detail--entity{
+#detail--entity {
   background-color:white;
-  padding:50px 5px 0px 20px;
+  padding: 50px 5px 0px 20px;
   -moz-border-radius: 5px;
   -webkit-border-radius: 5px;
+  border-radius: 5px;
   /*border-left:1px solid white;
   border-top:1px solid white;
   border-right:1px solid white;*/
@@ -388,7 +390,14 @@ body {
 
 #detail--units, #detail--entity {
     position: relative;
-    margin: 0 5px;
+}
+
+#detail--units {
+    margin: 10px 10px 10px 5px;
+}
+
+#detail--entity {
+    margin: 10px 5px 10px 10px;
 }
 
 #detail--units h5, #detail--entity h5 {
@@ -445,16 +454,12 @@ body {
   max-height: 100px;
 }
 
-#io {
-  padding:50px 0px 0px 15px;
-}
-
-#optimize {
-  margin: 30px 0px 0px 0px;
-}
-
-#about {
-  margin: 30px 15px 0px 15px;
+#io, #optimize-panel, #about {
+  background-color: white;
+  height: 100%;
+  margin: 10px;
+  padding: 10px;
+  border-radius: 5px;
 }
 
 #about p:nth-child(2) {
