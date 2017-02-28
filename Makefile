@@ -112,6 +112,6 @@ output/route_matrix.rds: output/sampled_buildings.rds download/re_schulstand.geo
 
 process: output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
 
-optim.nb.html: optim.Rmd output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
-	Rscript -e "rmarkdown::render('optim.Rmd')"
-app_data: optim.nb.html
+pipeline.nb.html: pipeline.Rmd output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
+	Rscript -e "rmarkdown::render('pipeline.Rmd')"
+app_data: pipeline.nb.html
