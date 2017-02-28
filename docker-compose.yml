@@ -1,7 +1,7 @@
 shiny:
   build: .
   volumes:
-    # - ./app:/srv/shiny-server/
+    # - ./app:/srv/shiny-server/ # doesn't work because of Packrat
     - ./log/:/var/log/
   ports:
     - "3838:3838"

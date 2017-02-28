@@ -16,7 +16,7 @@ Folder structure is as follows:
 - download – contains downloaded datasets (disposable - recreate with `make download`)
 - output – contains generated datasets (disposable - see `Makefile`)
 - app – contains the shiny app
-- R – contains R files containing functions
+- R – contains R files containing functions (currently none)
 - figs – contains generated graphics/reports (disposable)
 - . – contains Notebooks and R Scripts that do stuff (many of them will be run by `make` targets)
 
@@ -37,14 +37,15 @@ Folder structure is as follows:
 We are using this pull request: https://github.com/Project-OSRM/osrm-backend/pull/2764
 
 	curl "http://localhost:5000/table/v1/foot/13.388860,52.517037;13.397634,52.529407;13.428555,52.523219?sources=0&output_components=distances;durations"
-	
+
 And in R
 
+    install.packages("devtools")
     devtools::install_github("kirel/osrm", ref = "table-distances")
 
 ## Scraper
 
-Don't run this. Data is in `data`.
+Don't run this. Data is in `data`. This is legacy stuff.
 
 ## Download data
 
@@ -72,9 +73,11 @@ or
     sh start.sh
     open http://localhost:3535
 
+or open app.R in [RStudio](https://www.rstudio.com/) and run it.
+
 ## Deployment
 
-Private for now.
+Documentation for me. Adapt to your own server.
 
     docker-compose -f docker-compose-prod.yml build
     export BASIC_AUTH="/ user pw"
