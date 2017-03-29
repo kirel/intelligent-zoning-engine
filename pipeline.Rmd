@@ -1,6 +1,9 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output:
+  html_notebook:
+    toc: TRUE
+    toc_float: TRUE
 ---
 
 ```{r libs, include=F, warning=F}
