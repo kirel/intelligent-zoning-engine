@@ -8,8 +8,12 @@ body {
   height: calc(100% - 400px);
 }
 
+/* entities */
+
 #map .entity {
   stroke-width: 2;
+  /* transform: scale(2); */
+  transform-origin: 50% 50%;
 }
 
 #map .entity.selected {
@@ -34,10 +38,27 @@ body {
   fill: red;
 }
 
+/* units */
+
+#map .unit_meta.selected {
+  stroke-width: 4;
+  stroke: red;
+  stroke-opacity: 0.5;
+}
+
+#map .unit.other-entity-selected {
+  fill-opacity: 0.8;
+  filter: url(#desaturate);
+}
+
 /* see http://iros.github.io/patternfills/sample_css.html */
 #svg-patterns { position: absolute; }
-.unlocked { fill: transparent; }
-.locked { fill: url(#locked-pattern); }
+#map .unit_meta.unlocked {
+  fill: transparent;
+}
+#map .unit_meta.locked {
+  fill: url(#locked-pattern);
+}
 
 /*** Map controls ***/
 

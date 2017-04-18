@@ -126,8 +126,15 @@ ui <- fillPage(
     tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
     tags$title(HTML("idalab - intelligent zoning engine")),
     tags$link(rel = "stylesheet", type = "text/css", href = "styles.css"),
+    # colors for table and map
     tags$style(HTML(
-      do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color), ~ paste0(".entity-color-", .x, " {color:", .y, " !important;}.entity-bg-", .x, " {background-color:", .y, "!important;}\n")))
+      do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color),
+                           ~ paste0(
+                              ".entity-color-", .x, " {color:", .y, " !important;}\n",
+                              ".entity-bg-", .x, " {background-color:", .y, " !important;}\n",
+                              ".entity-", .x, " {fill:", .y,";}\n",
+                              ".unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
+                              )))
       ))
   ),
   # stripes pattern
@@ -135,8 +142,18 @@ ui <- fillPage(
     id='svg-patterns',
     HTML('<svg height="5" width="5" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="locked-pattern" patternUnits="userSpaceOnUse" width="5" height="5"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cGF0aCBkPSJNMCA1TDUgMFpNNiA0TDQgNlpNLTEgMUwxIC0xWiIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+" x="0" y="0" width="5" height="5"> </image> </pattern> </defs> </svg>'),
     HTML('<svg height="10" width="10" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="diagonal-stripe-1" patternUnits="userSpaceOnUse" width="10" height="10"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+CiAgPHJlY3Qgd2lkdGg9JzEwJyBoZWlnaHQ9JzEwJyBmaWxsPSd3aGl0ZScvPgogIDxwYXRoIGQ9J00tMSwxIGwyLC0yCiAgICAgICAgICAgTTAsMTAgbDEwLC0xMAogICAgICAgICAgIE05LDExIGwyLC0yJyBzdHJva2U9J2JsYWNrJyBzdHJva2Utd2lkdGg9JzEnLz4KPC9zdmc+Cg==" x="0" y="0" width="10" height="10"> </image> </pattern> </defs> </svg>'),
-    HTML('<svg height="8" width="8" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="crosshatch" patternUnits="userSpaceOnUse" width="8" height="8"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4JyBoZWlnaHQ9JzgnPgogIDxyZWN0IHdpZHRoPSc4JyBoZWlnaHQ9JzgnIGZpbGw9JyNmZmYnLz4KICA8cGF0aCBkPSdNMCAwTDggOFpNOCAwTDAgOFonIHN0cm9rZS13aWR0aD0nMC41JyBzdHJva2U9JyNhYWEnLz4KPC9zdmc+Cg==" x="0" y="0" width="8" height="8"> </image> </pattern> </defs> </svg>
-')
+    HTML('<svg height="8" width="8" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="crosshatch" patternUnits="userSpaceOnUse" width="8" height="8"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4JyBoZWlnaHQ9JzgnPgogIDxyZWN0IHdpZHRoPSc4JyBoZWlnaHQ9JzgnIGZpbGw9JyNmZmYnLz4KICA8cGF0aCBkPSdNMCAwTDggOFpNOCAwTDAgOFonIHN0cm9rZS13aWR0aD0nMC41JyBzdHJva2U9JyNhYWEnLz4KPC9zdmc+Cg==" x="0" y="0" width="8" height="8"> </image> </pattern> </defs> </svg>'),
+    HTML('<svg version="1.1"
+     baseProfile="full"
+         xmlns="http://www.w3.org/2000/svg">
+        <filter id="desaturate">
+        <feColorMatrix type="matrix" values="
+        .4  .3  .3   0   0
+        .3  .4  .3   0   0
+        .3  .3  .4   0   0
+         0   0   0   1   0 "/>
+         </filter>
+         </svg>')
   ),
   fillRow(
     div(
@@ -197,6 +214,12 @@ ui <- fillPage(
       id='table-panel',
       DT::dataTableOutput("table")
     )
+  ),
+  singleton(
+    tags$head(tags$script(src = "lodash.min.js"))
+  ),
+  singleton(
+    tags$head(tags$script(src = "message-handler.js"))  
   )
 )
 
@@ -459,6 +482,10 @@ server <- function(input, output, session) {
 
   ### Update the UI
 
+  # UI is not actually updated.
+  # Draw a polygon layer and another polygon "effects" or meta layer.
+  # Each polygon has a class (that is actually an id) like unit_12345.
+  # Then custom javascript just makes sure that all polygons have the right classes.
   updateMap = function(map, units, show_population = FALSE) {
     flog.debug('updateMap')
     flog.debug('nrow(units) %s', nrow(units))
@@ -469,30 +496,26 @@ server <- function(input, output, session) {
         # redraw updated selected units
         addPolygons(
           data=units, group='units', layerId=~paste0('unit_', unit_id),
-          stroke = F,
-          fillOpacity = ~ replaceNA(
-            ifelse(rep(show_population, nrow(units)),
-                   scales::rescale(population, to=c(0.1, 1), from=population_range)
-                   , 1),
-            1),
           smoothFactor = 0.2,
-          color = ~ ifelse( # TODO factor into function
-              entity_id == NONE_SELECTED & unit_id %in% optimizable_units,
-              ifelse(!highlighted, desat(warning_color, 0.3), warning_color),
-              entity_colors(entity_id, desaturate = !highlighted)
-              )
+          stroke=NULL, color=NULL, fillOpacity=NULL,
+          options=pathOptions(
+            className=~paste(
+              'unit',
+              paste0('unit-', unit_id)
+            ))
         ) %>%
-        # locked
+        # meta layer for effects
         addPolygons(
-          data=units, color=NULL, fillOpacity=NULL,
-          group='locked_units', layerId=~paste0('locked_unit_', unit_id),
-          options=pathOptions(pointerEvents='none', className=~ifelse(locked, 'locked', 'unlocked'))
-        ) %>%
-        # draw boundaries of selected units
-        addPolylines(
-          data=units, color=~ifelse(selected, 'red', 'transparent'), weight=4,
-          group='selected_units', layerId=~paste0('selected_unit_', unit_id),
-          options=pathOptions(pointerEvents='none', className='selected_units')
+          data=units,
+          group='meta_units', layerId=~paste0('meta_unit_', unit_id),
+          smoothFactor = 0.2,
+          stroke=NULL, color=NULL, fillOpacity=NULL,
+          options=pathOptions(
+            pointerEvents='none',
+            className=~paste(
+              'unit_meta',
+              paste0('unit-', unit_id)
+              ))
         )
     }
     # always draw entities on top
@@ -512,10 +535,16 @@ server <- function(input, output, session) {
     flog.debug('Drawing entities for map')
     map = map %>%
       addCircleMarkers(
-        data=r$entities, group='entities-warning', layerId=~paste0('entity_warning_', entity_id),
-        options=pathOptions(pointerEvents='none', className=~paste('capacity-indicator', capacity_warning)),
+        data=r$entities,
+        group='entities-warning',
+        layerId=~paste0('entity_warning_', entity_id),
+        options=pathOptions(
+          pointerEvents='none',
+          className=~paste('capacity-indicator', capacity_warning)
+          ),
         fillOpacity=NULL, color=NULL, opacity=NULL, fillColor=NULL,
-        weight=2, radius=~warning_radius
+        weight=2,
+        radius=~warning_radius
       ) %>%
       addCircleMarkers(
         data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
@@ -525,6 +554,29 @@ server <- function(input, output, session) {
       )
     return(map)
   }
+  
+  updateMapJS = function() {
+    utilization = entities_df %>%
+      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population)), by='entity_id') %>%
+      mutate(utilization=pop/capacity)
+    message = list(
+      units=list(
+        unit_id=as.list(r$units[r$units$updated,]$unit_id),
+        entity_id=as.list(r$units[r$units$updated,]$entity_id),
+        selected=as.list(r$units[r$units$updated,]$selected),
+        locked=as.list(r$units[r$units$updated,]$locked)
+      ),
+      entities=list(
+        entity_id=as.list(utilization$entity_id),
+        utilization=as.list(utilization$utilization)
+      ),
+      selected_entity=r$selected_entity
+    )
+    session$onFlushed(function() { # run after leaflet
+      session$sendCustomMessage(type = 'updateMap',
+                                message = message)      
+    }, once=TRUE)
+  }
 
   # Initial map render
   output$map <- renderLeaflet({
@@ -533,6 +585,7 @@ server <- function(input, output, session) {
         addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
         addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
         updateMap(r$units, input$show_population)
+      updateMapJS()
       r$units$updated = F
       flog.debug('Map initialized')
       m
@@ -541,10 +594,9 @@ server <- function(input, output, session) {
 
   # incremental map update
   observeEvent(r$map_rev, {
-    updated_units = r$units[r$units$updated,]
-    show_population = input$show_population
-    leafletProxy("map") %>% updateMap(updated_units, show_population)
+    updateMapJS()
     r$units$updated = F
+    return()
     flog.debug('Map updated')
   })
 
