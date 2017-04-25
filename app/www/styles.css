@@ -10,31 +10,30 @@ body {
 
 /* entities */
 
-#map .entity {
+#map .entity, #map .entity-meta {
   stroke-width: 2;
-  /* transform: scale(2); */
-  transform-origin: 50% 50%;
+  /* transform-origin: 50% 50%; */
 }
 
-#map .entity.selected {
-  stroke-width: 4;
+#map .entity.deselected {
+  filter: url(#desaturate);
 }
 
-#map-panel .capacity-indicator {
+#map-panel .entity-meta {
   opacity: 0;
   stroke: none;
   fill: none;
 }
 
-#map-panel.show-utilization .capacity-indicator.under-capacity, #map-panel .capacity-indicator.over-capacity {
+#map-panel.show-utilization .entity-meta.under-capacity, #map-panel .entity-meta.over-capacity {
   opacity: 0.5;
 }
 
-#map-panel.show-utilization .capacity-indicator.under-capacity {
+#map-panel.show-utilization .entity-meta.under-capacity {
   fill: white;
 }
 
-#map-panel.show-utilization .capacity-indicator.over-capacity {
+#map-panel.show-utilization .entity-meta.over-capacity {
   fill: red;
 }
 
@@ -47,9 +46,20 @@ body {
 }
 
 #map .unit.other-entity-selected {
-  fill-opacity: 0.8;
   filter: url(#desaturate);
 }
+
+.show-population #map .unit.population10 { fill-opacity: 0.3; }
+.show-population #map .unit.population20 { fill-opacity: 0.37; }
+.show-population #map .unit.population30 { fill-opacity: 0.45; }
+.show-population #map .unit.population40 { fill-opacity: 0.53; }
+.show-population #map .unit.population50 { fill-opacity: 0.61; }
+.show-population #map .unit.population60 { fill-opacity: 0.68; }
+.show-population #map .unit.population70 { fill-opacity: 0.76; }
+.show-population #map .unit.population80 { fill-opacity: 0.84; }
+.show-population #map .unit.population90 { fill-opacity: 0.92; }
+.show-population #map .unit.population100 { fill-opacity: 1; }
+.show-population #map .unit.populationNA { fill-opacity: 0; }
 
 /* see http://iros.github.io/patternfills/sample_css.html */
 #svg-patterns { position: absolute; }

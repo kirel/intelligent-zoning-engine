@@ -219,6 +219,16 @@ ui <- fillPage(
     tags$head(tags$script(src = "lodash.min.js"))
   ),
   singleton(
+    tags$head(
+      tags$script(src = "https://d3js.org/d3-array.v1.min.js"),
+      tags$script(src = "https://d3js.org/d3-collection.v1.min.js"),
+      tags$script(src = "https://d3js.org/d3-color.v1.min.js"),
+      tags$script(src = "https://d3js.org/d3-format.v1.min.js"),
+      tags$script(src = "https://d3js.org/d3-interpolate.v1.min.js"),
+      tags$script(src = "https://d3js.org/d3-scale.v1.min.js")
+    )
+  ),
+  singleton(
     tags$head(tags$script(src = "message-handler.js"))  
   )
 )
@@ -322,6 +332,10 @@ server <- function(input, output, session) {
     shinyjs::toggleClass("map-panel", "show-utilization", input$show_utilization)
   })
 
+  observe({
+    shinyjs::toggleClass("map-panel", "show-population", input$show_population)
+  })
+  
   observeEvent(input$show_population, {
     r$units$updated = T
     mapNeedsUpdate()
@@ -492,6 +506,12 @@ server <- function(input, output, session) {
     if (nrow(units) > 0) {
       flog.debug('redrawing units')
       replaceNA = function(x, replace) ifelse(is.na(x), replace, x)
+      populationClasses = r$units %>% as.data.frame() %>%
+        mutate(c=paste0(
+          'population',
+          10+10*as.integer(10*0.9*(population-min(population, na.rm=T))/(max(population, na.rm=T)-min(population, na.rm=T)))
+          )) %>% .$c
+      
       map = map %>%
         # redraw updated selected units
         addPolygons(
@@ -501,7 +521,8 @@ server <- function(input, output, session) {
           options=pathOptions(
             className=~paste(
               'unit',
-              paste0('unit-', unit_id)
+              paste0('unit-', unit_id),
+              populationClasses
             ))
         ) %>%
         # meta layer for effects
@@ -518,39 +539,47 @@ server <- function(input, output, session) {
               ))
         )
     }
-    # always draw entities on top
+    # entities
     flog.debug('Calculating entities for map')
-    df = entities_df %>%
-      left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population)), by='entity_id') %>%
-      mutate(utilization=pop/capacity)
-    capacity_warning = df %>%
-      mutate(
-        warning=ifelse(utilization < MIN_UTILIZATION, 'under-capacity', ifelse(utilization > MAX_UTILIZATION, 'over-capacity', ''))
-        ) %>% .$warning
-    warning_radius = df %>%
-      mutate(
-        utilization_diff=abs(utilization-1),
-        warning_radius=pmax(7, pmin(12, scales::rescale(utilization_diff, c(7, 12), c(0.1, 1))))
-        ) %>% .$warning_radius
     flog.debug('Drawing entities for map')
     map = map %>%
+      # capacity indicators
       addCircleMarkers(
         data=r$entities,
-        group='entities-warning',
-        layerId=~paste0('entity_warning_', entity_id),
+        group='entities-meta',
+        layerId=~paste0('entity_meta_', entity_id),
         options=pathOptions(
           pointerEvents='none',
-          className=~paste('capacity-indicator', capacity_warning)
-          ),
-        fillOpacity=NULL, color=NULL, opacity=NULL, fillColor=NULL,
+          className=~paste(
+            'entity-meta',
+            paste0('entity-', entity_id)
+          )
+        ),
+        fillOpacity=NULL,
+        color=NULL,
+        opacity=NULL,
+        fillColor=NULL,
         weight=2,
-        radius=~warning_radius
+        radius=5
       ) %>%
+      # entity markers
       addCircleMarkers(
-        data=r$entities, group='entities', layerId=~paste0('entity_', entity_id),
+        data=r$entities,
+        group='entities',
+        layerId=~paste0('entity_', entity_id),
         label = ~entity_id,
-        options=pathOptions(className=~paste('entity', ifelse(entity_id == r$selected_entity, 'selected', ''))),
-        fillOpacity = 1, color='black', opacity=1, weight=2, radius=5, fillColor= ~entity_colors(entity_id, desaturate = !highlighted)
+        options=pathOptions(
+          className=~paste(
+            'entity',
+            paste0('entity-', entity_id)
+          )
+        ),
+        fillOpacity = 1,
+        color='black',
+        opacity=1,
+        weight=2,
+        radius=5,
+        fillColor=NULL
       )
     return(map)
   }
@@ -585,6 +614,10 @@ server <- function(input, output, session) {
         addProviderTiles("Stamen.Toner", option=providerTileOptions(opacity=0.2)) %>%  # Add default OpenStreetMap map tiles
         addPolylines(color='black', weight=4, opacity=1, data=bez) %>%
         updateMap(r$units, input$show_population)
+      # initial caching of map markers
+      session$onFlushed(function() { # run after leaflet
+        session$sendCustomMessage(type = 'getMapLayers', message=list())      
+      }, once=TRUE)
       updateMapJS()
       r$units$updated = F
       flog.debug('Map initialized')

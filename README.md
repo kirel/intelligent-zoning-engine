@@ -65,6 +65,10 @@ Final step
 
 ## Run app
 
+Run coffeescript compiler
+
+    coffee -cw app/www
+
     docker-compose up
     open http://localhost:3535
 
