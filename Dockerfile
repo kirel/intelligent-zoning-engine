@@ -1,6 +1,6 @@
 FROM rocker/shiny
 
-RUN apt-get update; apt-get install -y --allow-downgrades libtiff5=4.0.7-4 libtiff-dev libgdal-dev libgeos-dev libxml2-dev libgit2-dev libssl-dev libv8-dev texlive texlive-latex-extra
+RUN apt-get update && apt-get upgrade -y && apt-get install -y -t unstable libtiff-dev libgdal-dev libgeos-dev libxml2-dev libgit2-dev libssl-dev libv8-dev texlive texlive-latex-extra
 
 ENV APP_DIR /srv/shiny-server
 
