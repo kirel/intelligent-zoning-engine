@@ -10,16 +10,22 @@ cached_selector = (selector) ->
 
 applied = (f) -> (args) -> f(args...)
 
-Shiny.addCustomMessageHandler 'getMapLayers', (message) ->
-  console.log 'getMapLayers'
+waitFor = (pred, cb, message) ->
+  if pred()
+    cb(message)
+  else
+    setTimeout((-> waitFor(pred, cb, message)), 1000)
+    
+leafletInitialized = -> $('#map').data("leaflet-map")?
+layersInitialized = -> window.mapLayers?
+
+getMapLayers = (message) ->
   window.mapLayers = {}
   $('#map').data("leaflet-map").eachLayer (layer) ->
     if layer instanceof L.CircleMarker
       window.mapLayers[layer.options.layerId] = layer
-
-Shiny.addCustomMessageHandler 'updateMap', (message) ->
-  console.log 'updateMap'
-  console.log message
+      
+updateMap = (message) ->
   _.zip(message.units.unit_id, message.units.entity_id, message.units.selected, message.units.locked).forEach applied(
     (unit_id, entity_id, selected, locked) ->
       unit = cached_selector('.unit-'+unit_id)
@@ -39,5 +45,12 @@ Shiny.addCustomMessageHandler 'updateMap', (message) ->
       cached_selector('.entity-meta.entity-'+entity_id)
         .toggleClass('over-capacity', utilization > 1)
         .toggleClass('under-capacity', utilization < 1)
+      getMapLayers() unless window.mapLayers['entity_meta_'+entity_id]?
       window.mapLayers['entity_meta_'+entity_id].setRadius(scale(utilization))
   )
+      
+Shiny.addCustomMessageHandler 'getMapLayers', (message) ->
+  waitFor(leafletInitialized, getMapLayers, message)
+
+Shiny.addCustomMessageHandler 'updateMap', (message) ->
+  waitFor(layersInitialized, updateMap, message)
