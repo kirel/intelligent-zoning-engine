@@ -147,11 +147,10 @@ ui <- fillPage(
      baseProfile="full"
          xmlns="http://www.w3.org/2000/svg">
         <filter id="desaturate">
-        <feColorMatrix type="matrix" values="
-        .4  .3  .3   0   0
-        .3  .4  .3   0   0
-        .3  .3  .4   0   0
-         0   0   0   1   0 "/>
+        <feColorMatrix id="matrix" type="matrix" values=".4  .3  .3   0   0
+                                             .3  .4  .3   0   0
+                                             .3  .3  .4   0   0
+                                              0   0   0   1   0 "/>
          </filter>
          </svg>')
   ),

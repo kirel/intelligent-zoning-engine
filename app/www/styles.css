@@ -16,7 +16,7 @@ body {
 }
 
 #map .entity.deselected {
-  filter: url(#desaturate);
+  filter: url(.#desaturate);
 }
 
 #map-panel .entity-meta {
@@ -46,7 +46,7 @@ body {
 }
 
 #map .unit.other-entity-selected {
-  filter: url(#desaturate);
+  filter: url(.#desaturate);
 }
 
 .show-population #map .unit.population10 { fill-opacity: 0.3; }
@@ -67,7 +67,7 @@ body {
   fill: transparent;
 }
 #map .unit_meta.locked {
-  fill: url(#locked-pattern);
+  fill: url(.#locked-pattern);
 }
 
 /*** Map controls ***/
