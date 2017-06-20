@@ -1,6 +1,6 @@
 PackratFormat: 1.4
 PackratVersion: 0.4.8.1
-RVersion: 3.3.3
+RVersion: 3.4.0
 Repos: CRAN=https://cran.rstudio.com/
 
 Package: BH
@@ -113,8 +113,8 @@ Requires: png
 
 Package: V8
 Source: CRAN
-Version: 1.2
-Hash: 8dfa6ca05f4dec157f91af230bd71091
+Version: 1.5
+Hash: 3713c661d65f40baf5c94b813839eab1
 Requires: Rcpp, curl, jsonlite
 
 Package: XML
