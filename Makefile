@@ -114,14 +114,17 @@ download: schulen adressen einzugsbereiche LOR flaechen RBS einwohner anmeldezah
 
 output/HKO_2015.geojson: download/HKO_2015_EPSG5650.txt HKO_2015.R
 	rm -f $@
+	mkdir -p output
 	Rscript HKO_2015.R
 
 output/sampled_buildings.rds: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
 	rm -f $@
+	mkdir -p output
 	Rscript sampled_buildings.R
 
 output/route_matrix.rds: output/sampled_buildings.rds download/re_schulstand.geojson route_matrix_sampled.R
 	rm -f $@
+	mkdir -p output
 	Rscript route_matrix_sampled.R
 
 process: output/HKO_2015.geojson output/sampled_buildings.rds output/route_matrix.rds
