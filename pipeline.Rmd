@@ -24,7 +24,7 @@ library(rgeos)
 Dieses Notebook bereitet die Daten für die Intelligent Zoning Engine vor. Es speichert
 
 - entities.geojson — Schulen, deren Geokoordinaten und Attribute: entity_id, capacity, und andere Attribute
-- entities.csv — Statistische Blöcke Berlins und optimierungsrelevante Attribute: entity_id, capacity
+- entities.csv — Schulen und optimierungsrelevante Attribute: entity_id, capacity
 - units.geojson — Statistische Blöcke Berlins, deren Geometrie und Attribute
 - units.csv — Statsitische Blöcke Berlins und optimierungsrelevante Attribute: unit_id, population, percentage_sgb
 - weights.csv — optimierungsrelevante Gewichte wie Fußwege / Spalten: entity_id, unit_id, weight, value
@@ -275,7 +275,7 @@ travel_matrix
 Wir haben Sozioökonomische Daten in den Wahlbezirken. Strategie:
 - Schneiden der Wahlbezirke mit den Blöcken
 - Übernahme des Prozentwertes vom Wahlbezirk für jeden (Unter-)block
-- Zuordnung zu jedem Block und Vereinigung durch Flächen/Wohnhaus-gewichtetes Mittel des Prozentwertes 
+- Zuordnung zu jedem Block und Vereinigung durch Flächen/Wohnhaus-gewichtetes Mittel des Prozentwertes
 
 ```{r}
 UWB = readOGR('download/RBS_OD_UWB_AGH2016.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
@@ -285,6 +285,7 @@ UWB = UWB %>% sp::merge(sozio_UWB, by='ID')
 
 ggplot(broom::tidy(UWB, region='ID') %>% inner_join(UWB %>% as.data.frame, by=c('id'='ID'))) + geom_polygon(aes(x=long, y=lat, group=group, fill=sgbIIu65)) + coord_map()
 ```
+
 
 Check for self intersections
 ```{r}
@@ -358,7 +359,7 @@ adjacency_df = adjacency %>% as.data.frame() %>% mutate(from=rownames(.)) %>%
   inner_join(spTransform(blk_in_bez, wgs84) %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
 
 ggplot() +
-  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK')) + 
+  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(spTransform(blk_in_bez, wgs84), region='BLK')) +
   geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=adjacency_df) +
   theme_nothing() + coord_map()
 
@@ -525,4 +526,3 @@ addresses_in_bez@data
 file.remove('app/data/addresses.geojson')
 writeOGR(addresses_in_bez, "app/data/addresses.geojson", layer="addresses", driver="GeoJSON", check_exists = FALSE)
 ```
-
