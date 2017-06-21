@@ -10,7 +10,7 @@ library(purrr)
 #library(ggplot2)
 #library(broom)
 
-HKO_2015 = readOGR('download/HKO_2015.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+HKO_2015 = readOGR('output/HKO_2015.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
 blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
 alkis = readOGR('download/re_alkis_tatsaechlichenutzungflaechen.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 
