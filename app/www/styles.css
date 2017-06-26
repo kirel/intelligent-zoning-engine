@@ -39,6 +39,14 @@ body {
 
 /* units */
 
+#map .unit {
+  fill: red;
+}
+
+#map .unit.populationNA {
+  fill: black;
+}
+
 #map .unit_meta.selected {
   stroke-width: 4;
   stroke: red;

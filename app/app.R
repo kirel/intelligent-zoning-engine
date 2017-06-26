@@ -130,10 +130,10 @@ ui <- fillPage(
     tags$style(HTML(
       do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color),
                            ~ paste0(
-                              ".entity-color-", .x, " {color:", .y, " !important;}\n",
-                              ".entity-bg-", .x, " {background-color:", .y, " !important;}\n",
-                              ".entity-", .x, " {fill:", .y,";}\n",
-                              ".unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
+                              "#map .entity-color-", .x, " {color:", .y, " !important;}\n",
+                              "#map .entity-bg-", .x, " {background-color:", .y, " !important;}\n",
+                              "#map .entity-", .x, " {fill:", .y,";}\n",
+                              "#map .unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
                               )))
       ))
   ),
