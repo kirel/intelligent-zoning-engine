@@ -11,11 +11,10 @@ header-includes:
 - \usepackage{longtable}
 - \definecolor{BrewerRed}{HTML}{E41A1C}
 params:
-  NO_ASSIGNMENT: ''
-  addresses: ''
-  entities: ''
-  units: ''
-  weights: ''
+  NO_ASSIGNMENT: NA
+  addresses: NA
+  entities: NA
+  units: NA
 classoption: a4paper
 ---
 
@@ -32,42 +31,51 @@ percent <- function(x, digits = 2, format = "f", ...) {
 
 ## Adressliste
 
-```{r addresses, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+```{r, include=FALSE}
 table = cbind(
-  as.data.frame(addresses),
-  over(addresses, generate_spatial_df(units, entities, weights, NO_ASSIGNMENT))
+  as.data.frame(params$addresses),
+  over(params$addresses, params$units)
   ) %>%
   group_by(entity_id) %>%
   do(data.frame(addresses=to_addresslist(.))) %>%
-  arrange(entity_id) %>%
-  select(Straße=addresses, Schule=entity_id)
+  arrange(entity_id)
 
-only_schools = table[complete.cases(table),]
-unique_schools = match(unique(only_schools$Schule), only_schools$Schule)
-table.uniqSchulen.indices = sapply(unique_schools, FUN=function(d) { return(d-1);})
-schulen_header = as.character(sapply(table[unique_schools,]$Schule, FUN = function(d) { 
-  schule= entities@data %>% filter(entity_id == d)
-  return(sprintf("\\textbf{%s, %s} \\\\\n",schule$SCHULNAME, d)); }))
-addtorow <- list()
-addtorow$pos <- as.list(table.uniqSchulen.indices)
-addtorow$command <- schulen_header
+with_assignment = table %>% filter(entity_id != params$NO_ASSIGNMENT)
+no_assignment = table %>% filter(entity_id == params$NO_ASSIGNMENT)
+```
 
-print(
-  xtable::xtable(table[!is.na(table$Schule),1],align='lp{12cm}'),
-  hline.after=table.uniqSchulen.indices,
-  include.rownames = FALSE, comment = FALSE,
-  add.to.row=addtorow,
-  include.colnames = FALSE,
-  tabular.environment="longtable", floating=FALSE
-)
+```{r addresses, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+# content = table %>% group_by(entity_id) %>% do(content=capture.output(print_school_table(.$entity_id[1], .$addresses))) %>% .$content
+# cat(content[[1]], sep='\n')
+for(the_entity_id in unique(with_assignment$entity_id)) {
+  caption = params$entities@data %>% filter(entity_id == the_entity_id) %>% transmute(caption = paste(SCHULNAME, entity_id, sep=' — ')) %>% .$caption
+  addresses_for_entity = table %>% filter(entity_id == the_entity_id) %>% .[,c('addresses')]
+  print(
+    xtable::xtable(
+      addresses_for_entity,
+      align='lp{14cm}'
+      ),
+    include.rownames = FALSE, comment = FALSE, include.colnames = FALSE,
+    tabular.environment="longtable", floating=FALSE, caption.placement = "top",
+    add.to.row = list(pos=list(0), command=sprintf("\\hline \n \\textbf{%s} \\\\ \n \\hline \\hline \n \\endhead", caption))
+  )
+}
 ```
 
 ### Ohne Zuordnung
 
 ```{r addresses-na, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-print(
-  xtable::xtable(table[is.na(table$Schule), c('Straße')], align='lp{14cm}'),
-  include.rownames = FALSE, comment = FALSE,
-  tabular.environment="longtable", floating=FALSE
-)
+if (nrow(no_assignment) > 0) {
+  print(
+    xtable::xtable(
+      no_assignment[,c('addresses')],
+      align='lp{14cm}'
+      ),
+    include.rownames = FALSE, comment = FALSE, include.colnames = FALSE,
+    tabular.environment="longtable", floating=FALSE, caption.placement = "top",
+    add.to.row = list(pos=list(0), command="\\hline \n \\textbf{Keine Zuordnung} \\\\ \n \\hline \\hline \n \\endhead")
+  )  
+} else {
+  cat("Keine Adressen ohne Zuordnung.")
+}
 ```

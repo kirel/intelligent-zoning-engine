@@ -1079,21 +1079,22 @@ server <- function(input, output, session) {
   )
 
   output$addresses = downloadHandler(
-    filename = paste0('addresses_', Sys.Date(), '.pdf'),
+    filename = function() { paste0('addresses_', Sys.Date(), '.pdf') },
     content = function(con) {
       temp_dir = tempdir()
-      isolate(rmarkdown::render(
+      params = list(
+        addresses = addresses,
+        units = r$units,
+        entities = r$entities,
+        NO_ASSIGNMENT = NO_ASSIGNMENT
+      )
+      rmarkdown::render(
         'templates/addresses_report_de.Rmd',
         output_file = con,
         intermediates_dir = temp_dir,
-        envir = new.env(), # isolate rendering
-        params = list(
-          addresses = addresses,
-          units = r$units,
-          entities = r$entities,
-          NO_ASSIGNMENT = NO_ASSIGNMENT
-        )
-      ))
+        params = params,
+        envir = new.env(parent = globalenv()) # isolate rendering
+      )
     }
   )
   output$report = downloadHandler(
