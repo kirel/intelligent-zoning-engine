@@ -1106,7 +1106,10 @@ server <- function(input, output, session) {
       if (file.exists(map_path)) {
         berlin = read_rds(map_path)
       } else {
-        berlin = ggmap::get_map('Berlin')
+        expand_bbox = function(bbox, buffer=0.1) {
+          bbox+matrix(c(-0.1*(bbox[,'max']-bbox[,'min']),0.1*(bbox[,'max']-bbox[,'min'])), 2, 2)
+        }
+        berlin = get_map(expand_bbox(bbox(bez)), source='stamen', maptype = 'toner-lite')
         write_rds(berlin, map_path, compress = 'gz')
       }
       isolate(rmarkdown::render(
