@@ -52,7 +52,7 @@ bez = readOGR('download/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', strin
 blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
-HKO_2015 = readOGR('download/HKO_2015.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+HKO_2015 = readOGR('output/HKO_2015.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
 ```
 
 ### Schulwege
