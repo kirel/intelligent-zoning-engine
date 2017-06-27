@@ -130,10 +130,10 @@ ui <- fillPage(
     tags$style(HTML(
       do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color),
                            ~ paste0(
-                              ".entity-color-", .x, " {color:", .y, " !important;}\n",
-                              ".entity-bg-", .x, " {background-color:", .y, " !important;}\n",
-                              ".entity-", .x, " {fill:", .y,";}\n",
-                              ".unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
+                              "#map .entity-color-", .x, " {color:", .y, " !important;}\n",
+                              "#map .entity-bg-", .x, " {background-color:", .y, " !important;}\n",
+                              "#map .entity-", .x, " {fill:", .y,";}\n",
+                              "#map .unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
                               )))
       ))
   ),
@@ -190,6 +190,7 @@ ui <- fillPage(
                   )),
                   tabPanel("Import/Export", div(id='io',
                       downloadButton('report', 'Report'),
+                      downloadButton('addresses', 'Adressliste'),
                       downloadButton('serveAddresses', 'Adressliste als CSV'),
                       downloadButton('serveGeoJSON', 'GeoJSON'),
                       downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
@@ -1084,14 +1085,36 @@ server <- function(input, output, session) {
       isolate({
         table = cbind(
           as.data.frame(addresses),
-          over(addresses, generate_spatial_df(r$units, r$entities, weights, NO_ASSIGNMENT))
-        ) %>% select(Straße=street, Hausnummer=no, Schule=entity_id)
+          over(addresses, r$units)
+        ) %>% arrange(entity_id, street, no) %>%
+          mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id)) %>%
+          select(Straße=street, Hausnummer=no, Schule=entity_id)
+          
         write.csv( table, con)
       })
     }
   )
+  output$addresses = downloadHandler(
+    filename = function() { paste0('addresses_', Sys.Date(), '.pdf') },
+    content = function(con) {
+      temp_dir = tempdir()
+      params = list(
+        addresses = addresses,
+        units = r$units,
+        entities = r$entities,
+        NO_ASSIGNMENT = NO_ASSIGNMENT
+      )
+      rmarkdown::render(
+        'templates/addresses_report_de.Rmd',
+        output_file = con,
+        intermediates_dir = temp_dir,
+        params = params,
+        envir = new.env(parent = globalenv()) # isolate rendering
+      )
+    }
+  )
   output$report = downloadHandler(
-    filename = paste0('report_', Sys.Date(), '.pdf'),
+    filename = function() { paste0('report_', Sys.Date(), '.pdf') },
     content = function(con) {
       temp_dir = tempdir()
       # load map
@@ -1099,27 +1122,31 @@ server <- function(input, output, session) {
       if (file.exists(map_path)) {
         berlin = read_rds(map_path)
       } else {
-        berlin = ggmap::get_map('Berlin')
+        expand_bbox = function(bbox, buffer=0.1) {
+          bbox+matrix(c(-0.1*(bbox[,'max']-bbox[,'min']),0.1*(bbox[,'max']-bbox[,'min'])), 2, 2)
+        }
+        berlin = get_map(expand_bbox(bbox(bez)), source='stamen', maptype = 'toner-lite')
         write_rds(berlin, map_path, compress = 'gz')
       }
-      isolate(rmarkdown::render(
+      params = list(
+        map = berlin,
+        addresses = addresses,
+        units = r$units,
+        entities = r$entities,
+        NO_ASSIGNMENT = NO_ASSIGNMENT,
+        min_util = MIN_UTILIZATION,
+        max_util = MAX_UTILIZATION,
+        colors = color_vec,
+        optimizable_units = optimizable_units,
+        weights = weights
+      )
+      rmarkdown::render(
         'templates/assignment_report_de.Rmd',
         output_file = con,
         intermediates_dir = temp_dir,
-        envir = new.env(), # isolate rendering
-        params = list(
-          map = berlin,
-          addresses = addresses,
-          units = r$units,
-          entities = r$entities,
-          NO_ASSIGNMENT = NO_ASSIGNMENT,
-          min_util = MIN_UTILIZATION,
-          max_util = MAX_UTILIZATION,
-          colors = color_vec,
-          optimizable_units = optimizable_units,
-          weights = weights
-        )
-      ))
+        params = params,
+        envir = new.env(parent = globalenv()) # isolate rendering
+      )
     }
   )
 }
