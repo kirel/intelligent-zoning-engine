@@ -190,6 +190,7 @@ ui <- fillPage(
                   )),
                   tabPanel("Import/Export", div(id='io',
                       downloadButton('report', 'Report'),
+                      downloadButton('addresses', 'Adressliste'),
                       downloadButton('serveGeoJSON', 'GeoJSON'),
                       downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
                       fileInput('readAssignment', 'Zuordnung Hochladen',
@@ -1077,6 +1078,24 @@ server <- function(input, output, session) {
     }
   )
 
+  output$addresses = downloadHandler(
+    filename = paste0('addresses_', Sys.Date(), '.pdf'),
+    content = function(con) {
+      temp_dir = tempdir()
+      isolate(rmarkdown::render(
+        'templates/addresses_report_de.Rmd',
+        output_file = con,
+        intermediates_dir = temp_dir,
+        envir = new.env(), # isolate rendering
+        params = list(
+          addresses = addresses,
+          units = r$units,
+          entities = r$entities,
+          NO_ASSIGNMENT = NO_ASSIGNMENT
+        )
+      ))
+    }
+  )
   output$report = downloadHandler(
     filename = paste0('report_', Sys.Date(), '.pdf'),
     content = function(con) {

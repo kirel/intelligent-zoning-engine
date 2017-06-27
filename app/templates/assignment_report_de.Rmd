@@ -124,32 +124,3 @@ print(xtable::xtable(tmp_tbl, digits = 1, align = c("l", "l", rep("r", times = 6
       hline.after = c(-1, 0, nrow(tmp_tbl) - 1, nrow(tmp_tbl)),
       sanitize.text.function = identity)
 ```
-
-## Adressliste
-
-```{r addresses, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-table = cbind(
-  as.data.frame(addresses),
-  over(addresses, generate_spatial_df(units, entities, weights, NO_ASSIGNMENT))
-  ) %>%
-  group_by(entity_id) %>%
-  do(data.frame(addresses=to_addresslist(.))) %>%
-  arrange(addresses) %>%
-  select(Straße=addresses, Schule=entity_id)
-
-print(
-  xtable::xtable(table[!is.na(table$Schule),], align='lp{12cm}r'),
-  include.rownames = FALSE, comment = FALSE,
-  tabular.environment="longtable", floating=FALSE
-)
-```
-
-### Ohne Zuordnung
-
-```{r addresses-na, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-print(
-  xtable::xtable(table[is.na(table$Schule), c('Straße')], align='lp{14cm}'),
-  include.rownames = FALSE, comment = FALSE,
-  tabular.environment="longtable", floating=FALSE
-)
-```
