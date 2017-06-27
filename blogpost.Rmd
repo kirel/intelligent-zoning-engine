@@ -45,10 +45,14 @@ To explore the datasets we are using R here. We mostly use Python for analysis a
 The catchment areas come in the form of a shape file which can be loaded into a `SpatialPolygonsDataFrame` like this:
 
 ```{r}
-catchment_areas = readOGR('ESB2012_WGS84_EWR2012-12/ESB2012_WGS84_EWR2012-12.shp', layer='ESB2012_WGS84_EWR2012-12')
-catchment_areas = catchment_areas[,c("ID")]
+#catchment_areas = readOGR('ESB2012_WGS84_EWR2012-12/ESB2012_WGS84_EWR2012-12.shp', layer='ESB2012_WGS84_EWR2012-12')
+catchment_areas = readOGR('RBS_OD_ESB_2016_06/RBS_OD_ESB_2016_06.shp', layer='RBS_OD_ESB_2016_06')
+#catchment_areas = catchment_areas[,c("ID")]
+catchment_areas = catchment_areas[,c("FID")]
+catchment_areas$ID = catchment_areas$FID
 crs = CRS(proj4string(catchment_areas))
-row.names(catchment_areas) = as.character(catchment_areas$ID)
+#row.names(catchment_areas) = as.character(catchment_areas$ID)
+row.names(catchment_areas) = as.character(catchment_areas$FID)
 plot(catchment_areas)
 ```
 
@@ -57,14 +61,14 @@ plot(catchment_areas)
 Coordinates of Schools in Berlin are also available and can be downloaded from [http://www.stadtentwicklung.berlin.de/geoinformation/fis-broker/](http://www.stadtentwicklung.berlin.de/geoinformation/fis-broker/).
 
 The easiest way to do this is using `ogr2ogr` from [`GDAL`](http://www.gdal.org/ogr2ogr.html). Here we are saving the data into a GeoJSON file.
-```{bash}
+```
 ogr2ogr -s_srs EPSG:25833 -t_srs WGS84 -f geoJSON schulen.geojson WFS:"http://fbinter.stadt-berlin.de/fb/wfs/geometry/senstadt/re_schulstand" fis:re_schulstand
 ```
 
 Now we can read it into a `SpatialPointsDataFrame` the same way we did with the shapefile previously. Note that we are reprojecting the data into the same coordinate reference system as the catchment areas, so that we can later join data without problems.
 
 ```{r}
-schools = readOGR('schulen.geojson', layer = 'OGRGeoJSON')
+schools = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON')
 schools = schools[schools$SCHULART == 'Grundschule',]
 #schools = spTransform(schools, crs)
 schools_df = schools %>% as.data.frame() %>%
@@ -185,16 +189,16 @@ One thing that could have happened here is, that the world kept turning while th
 The house coordinates in Berlin can be downloaded from http://www.stadtentwicklung.berlin.de/geoinformation/geodateninfrastruktur/de/geodienste/atom.shtml
 
 ```{r}
-addresses = read_delim("HKO_2015_EPSG5650.txt", ';', locale = locale(encoding = "latin1")) %>%
+addresses = read_delim("download/HKO_2015_EPSG5650.txt", ';', locale = locale(encoding = "latin1")) %>%
   mutate(EEEEEEEE_EEE=1.0*EEEEEEEE_EEE/1000.0, NNNNNNN_NNN=1.0*NNNNNNN_NNN/1000.0) %>%
   select(OI, STN, HNR, PLZ, EEEEEEEE_EEE, NNNNNNN_NNN) %>%
-  distinct(STN, HNR, PLZ) %>%
+  distinct(STN, HNR, PLZ, .keep_all = T) %>%
   as.data.frame()
 
 coordinates(addresses) = c('EEEEEEEE_EEE', 'NNNNNNN_NNN')
 proj4string(addresses) = CRS("+init=epsg:5650")
 
-addresses = spTransform(addresses, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+addresses = spTransform(addresses, CRS(proj4string(catchment_areas)))
 row.names(addresses) = addresses$OI
 
 box = bbox(addresses)
@@ -241,8 +245,9 @@ osrmRoute(c("Foo",13.347015,52.536273), c("Bar",13.452759,52.545461), sp=TRUE)@d
 Select a school, that has a catchment area and that is in that catchment area
 
 ```{r}
-random_school = left_join(schools_df, catchment_area_centroids_df) %>% filter(!is.na(long) & school_id==catchment_area_id) %>% sample_n(1)
+random_school = left_join(schools_df, catchment_area_centroids_df) %>% filter(!is.na(long) & school_id==catchment_area_id) %>% filter(school_id == '0719') %>% sample_n(1)
 kable(random_school)
+random_school
 ```
 
 
@@ -267,6 +272,7 @@ max_dist = 10#max(routed_ways_school$distance)
 
 ggplot() +
   geom_path(aes(long, lat, group=group, order=distance, color=distance, size=distance), data=data) +
+  #geom_path(aes(long, lat, group=group, order=distance, size=distance), data=data) +
   geom_point(aes(s_long, s_lat), size=0.5, data=schools_df %>% filter(school_id == random_school$school_id)) +
   scale_color_gradientn(colors=c('green', 'orange', 'red', 'red'), values=rescale(c(0,1.900,2.000,max_dist)), limits=c(0, max_dist)) +
   scale_size_continuous(range=c(1,0.001)) +
@@ -274,6 +280,7 @@ ggplot() +
   theme_void() +
   #ggtitle(paste("Einzugsgebiet", random_school$SCHULNAME)) +
   guides(color=F, size=F)
+ggsave('school_naked.png')
 ```
 
 ```{r}
@@ -288,7 +295,7 @@ expand_bbox(bbox_catchment_areas)
 ```{r}
 area_bbox = expand_bbox(bbox(catchment_areas_df %>% filter(id == random_school$school_id) %>% select(long, lat) %>% as.matrix()))
 
-map = get_map(area_bbox, source='stamen', maptype = 'toner-lite')
+map = get_map(area_bbox, source='stamen', maptype = 'toner-lite', zoom=15)
 ```
 
 
@@ -302,10 +309,12 @@ ggmap(map, extent = "normal", maprange = F) +
 
   geom_path(aes(long, lat, group=group, order=distance, color=distance, size=distance), data=data) +
   geom_point(aes(s_long, s_lat), size=0.5, data=schools_df %>% filter(school_id == random_school$school_id)) +
+  geom_text_repel(aes(s_long, s_lat, label=SCHULNAME), data=schools_df %>% filter(school_id == random_school$school_id)) +
   scale_color_gradientn(colors=c('green', 'orange', 'red', 'red'), values=rescale(c(0,1.900,2.000,max_dist)), limits=c(0, max_dist)) +
   scale_size_continuous(range=c(1,0.001)) +
   coord_map(xlim=area_bbox['x',], ylim=area_bbox['y',]) +
   theme_void() +
   #ggtitle(paste("Einzugsgebiet", random_school$SCHULNAME)) +
   guides(color=F, size=F)
+ggsave('school_annotated.png')
 ```

@@ -190,6 +190,7 @@ ui <- fillPage(
                   )),
                   tabPanel("Import/Export", div(id='io',
                       downloadButton('report', 'Report'),
+                      downloadButton('addresses', 'Adressliste'),
                       downloadButton('serveGeoJSON', 'GeoJSON'),
                       downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
                       fileInput('readAssignment', 'Zuordnung Hochladen',
@@ -1077,8 +1078,27 @@ server <- function(input, output, session) {
     }
   )
 
+  output$addresses = downloadHandler(
+    filename = function() { paste0('addresses_', Sys.Date(), '.pdf') },
+    content = function(con) {
+      temp_dir = tempdir()
+      params = list(
+        addresses = addresses,
+        units = r$units,
+        entities = r$entities,
+        NO_ASSIGNMENT = NO_ASSIGNMENT
+      )
+      rmarkdown::render(
+        'templates/addresses_report_de.Rmd',
+        output_file = con,
+        intermediates_dir = temp_dir,
+        params = params,
+        envir = new.env(parent = globalenv()) # isolate rendering
+      )
+    }
+  )
   output$report = downloadHandler(
-    filename = paste0('report_', Sys.Date(), '.pdf'),
+    filename = function() { paste0('report_', Sys.Date(), '.pdf') },
     content = function(con) {
       temp_dir = tempdir()
       # load map
@@ -1086,27 +1106,31 @@ server <- function(input, output, session) {
       if (file.exists(map_path)) {
         berlin = read_rds(map_path)
       } else {
-        berlin = ggmap::get_map('Berlin')
+        expand_bbox = function(bbox, buffer=0.1) {
+          bbox+matrix(c(-0.1*(bbox[,'max']-bbox[,'min']),0.1*(bbox[,'max']-bbox[,'min'])), 2, 2)
+        }
+        berlin = get_map(expand_bbox(bbox(bez)), source='stamen', maptype = 'toner-lite')
         write_rds(berlin, map_path, compress = 'gz')
       }
-      isolate(rmarkdown::render(
+      params = list(
+        map = berlin,
+        addresses = addresses,
+        units = r$units,
+        entities = r$entities,
+        NO_ASSIGNMENT = NO_ASSIGNMENT,
+        min_util = MIN_UTILIZATION,
+        max_util = MAX_UTILIZATION,
+        colors = color_vec,
+        optimizable_units = optimizable_units,
+        weights = weights
+      )
+      rmarkdown::render(
         'templates/assignment_report_de.Rmd',
         output_file = con,
         intermediates_dir = temp_dir,
-        envir = new.env(), # isolate rendering
-        params = list(
-          map = berlin,
-          addresses = addresses,
-          units = r$units,
-          entities = r$entities,
-          NO_ASSIGNMENT = NO_ASSIGNMENT,
-          min_util = MIN_UTILIZATION,
-          max_util = MAX_UTILIZATION,
-          colors = color_vec,
-          optimizable_units = optimizable_units,
-          weights = weights
-        )
-      ))
+        params = params,
+        envir = new.env(parent = globalenv()) # isolate rendering
+      )
     }
   )
 }

@@ -117,10 +117,10 @@ output/HKO_2015.geojson: download/HKO_2015_EPSG5650.txt HKO_2015.R
 	mkdir -p output
 	Rscript HKO_2015.R
 
-output/sampled_buildings.rds: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson sampled_buildings.R
+output/sampled_buildings.rds: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson buildings.R
 	rm -f $@
 	mkdir -p output
-	Rscript sampled_buildings.R
+	Rscript buildings.R
 
 output/route_matrix.rds: output/sampled_buildings.rds download/re_schulstand.geojson route_matrix_sampled.R
 	rm -f $@

@@ -1,0 +1,81 @@
+---
+title: "Schule-Block-Zuordnung"
+author: "idalab GmbH"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+  pdf_document: default
+  html_document: default
+header-includes:
+- \usepackage{booktabs}
+- \usepackage{xcolor}
+- \usepackage{longtable}
+- \definecolor{BrewerRed}{HTML}{E41A1C}
+params:
+  NO_ASSIGNMENT: NA
+  addresses: NA
+  entities: NA
+  units: NA
+classoption: a4paper
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+source('../io.R')
+source('../addresslist.R')
+```
+
+```{r libs, include=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
+```
+
+## Adressliste
+
+```{r, include=FALSE}
+table = cbind(
+  as.data.frame(params$addresses),
+  over(params$addresses, params$units)
+  ) %>%
+  group_by(entity_id) %>%
+  do(data.frame(addresses=to_addresslist(.))) %>%
+  arrange(entity_id)
+
+with_assignment = table %>% filter(entity_id != params$NO_ASSIGNMENT)
+no_assignment = table %>% filter(entity_id == params$NO_ASSIGNMENT)
+```
+
+```{r addresses, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+# content = table %>% group_by(entity_id) %>% do(content=capture.output(print_school_table(.$entity_id[1], .$addresses))) %>% .$content
+# cat(content[[1]], sep='\n')
+for(the_entity_id in unique(with_assignment$entity_id)) {
+  caption = params$entities@data %>% filter(entity_id == the_entity_id) %>% transmute(caption = paste(SCHULNAME, entity_id, sep=' — ')) %>% .$caption
+  addresses_for_entity = table %>% filter(entity_id == the_entity_id) %>% .[,c('addresses')]
+  print(
+    xtable::xtable(
+      addresses_for_entity,
+      align='lp{14cm}'
+      ),
+    include.rownames = FALSE, comment = FALSE, include.colnames = FALSE,
+    tabular.environment="longtable", floating=FALSE, caption.placement = "top",
+    add.to.row = list(pos=list(0), command=sprintf("\\hline \n \\textbf{%s} \\\\ \n \\hline \\hline \n \\endhead", caption))
+  )
+}
+```
+
+### Ohne Zuordnung
+
+```{r addresses-na, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+if (nrow(no_assignment) > 0) {
+  print(
+    xtable::xtable(
+      no_assignment[,c('addresses')],
+      align='lp{14cm}'
+      ),
+    include.rownames = FALSE, comment = FALSE, include.colnames = FALSE,
+    tabular.environment="longtable", floating=FALSE, caption.placement = "top",
+    add.to.row = list(pos=list(0), command="\\hline \n \\textbf{Keine Zuordnung} \\\\ \n \\hline \\hline \n \\endhead")
+  )  
+} else {
+  cat("Keine Adressen ohne Zuordnung.")
+}
+```

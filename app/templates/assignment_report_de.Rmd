@@ -10,14 +10,14 @@ header-includes:
   - \definecolor{BrewerRed}{HTML}{E41A1C}
 classoption: a4paper
 params:
-  map: ""
-  addresses: ""
-  units: ""
-  entities: ""
-  weights: ""
-  colors: ""
-  NO_ASSIGNMENT: ""
-  optimizable_units: ""
+  map: NA
+  addresses: NA
+  units: NA
+  entities: NA
+  weights: NA
+  colors: NA
+  NO_ASSIGNMENT: NA
+  optimizable_units: NA
   crit_dist: 2000
   min_util: 0.9
   max_util: 1.1
@@ -41,19 +41,25 @@ tmp_units = broom::tidy(params$units, region = 'unit_id') %>%
   dplyr::inner_join(params$units@data, by = c("id" = "unit_id")) %>%
   dplyr::select(id, entity_id, group, long, lat) %>%
   dplyr::mutate(optim = id %in% params$optimizable_units)
-tmp_shown = tmp_units %>%
-  dplyr::filter(optim)
+tmp_assigned = tmp_units %>%
+  dplyr::filter(entity_id != params$NO_ASSIGNMENT)
 tmp_unassigned = tmp_units %>%
-  dplyr::filter(!optim)
+  dplyr::filter(entity_id == params$NO_ASSIGNMENT & !optim)
+tmp_unassigned_should_be_assigned = tmp_units %>%
+  dplyr::filter(entity_id == params$NO_ASSIGNMENT & optim)
+
 tmp_entities <- as.data.frame(params$entities) %>%
   dplyr::select(entity_id, long = coords.x1, lat = coords.x2)
 
 ggmap::ggmap(params$map, extent = "device", legend = "none") +
   ggplot2::geom_polygon(mapping = ggplot2::aes(x = long, y = lat, group = group, fill = entity_id),
-                        data = tmp_shown) +
+                        data = tmp_assigned) +
   ggplot2::geom_polygon(mapping = ggplot2::aes(x = long, y = lat, group = group),
                         data = tmp_unassigned,
                         fill = "black", alpha = 1/4) +
+  ggplot2::geom_polygon(mapping = ggplot2::aes(x = long, y = lat, group = group),
+                        data = tmp_unassigned_should_be_assigned,
+                        fill = "red") +
   ggplot2::geom_point(mapping = ggplot2::aes(x = long, y = lat),
                       data = tmp_entities,
                       size = 1) +
@@ -123,33 +129,4 @@ print(xtable::xtable(tmp_tbl, digits = 1, align = c("l", "l", rep("r", times = 6
       booktabs = TRUE, include.rownames = FALSE, comment = FALSE,
       hline.after = c(-1, 0, nrow(tmp_tbl) - 1, nrow(tmp_tbl)),
       sanitize.text.function = identity)
-```
-
-## Adressliste
-
-```{r addresses, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-table = cbind(
-  as.data.frame(addresses),
-  over(addresses, generate_spatial_df(units, entities, weights, NO_ASSIGNMENT))
-  ) %>%
-  group_by(entity_id) %>%
-  do(data.frame(addresses=to_addresslist(.))) %>%
-  arrange(addresses) %>%
-  select(Straße=addresses, Schule=entity_id)
-
-print(
-  xtable::xtable(table[!is.na(table$Schule),], align='lp{12cm}r'),
-  include.rownames = FALSE, comment = FALSE,
-  tabular.environment="longtable", floating=FALSE
-)
-```
-
-### Ohne Zuordnung
-
-```{r addresses-na, results='asis', echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
-print(
-  xtable::xtable(table[is.na(table$Schule), c('Straße')], align='lp{14cm}'),
-  include.rownames = FALSE, comment = FALSE,
-  tabular.environment="longtable", floating=FALSE
-)
 ```
