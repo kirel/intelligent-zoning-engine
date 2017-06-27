@@ -1098,7 +1098,7 @@ server <- function(input, output, session) {
     }
   )
   output$report = downloadHandler(
-    filename = paste0('report_', Sys.Date(), '.pdf'),
+    filename = function() { paste0('report_', Sys.Date(), '.pdf') },
     content = function(con) {
       temp_dir = tempdir()
       # load map
@@ -1112,24 +1112,25 @@ server <- function(input, output, session) {
         berlin = get_map(expand_bbox(bbox(bez)), source='stamen', maptype = 'toner-lite')
         write_rds(berlin, map_path, compress = 'gz')
       }
-      isolate(rmarkdown::render(
+      params = list(
+        map = berlin,
+        addresses = addresses,
+        units = r$units,
+        entities = r$entities,
+        NO_ASSIGNMENT = NO_ASSIGNMENT,
+        min_util = MIN_UTILIZATION,
+        max_util = MAX_UTILIZATION,
+        colors = color_vec,
+        optimizable_units = optimizable_units,
+        weights = weights
+      )
+      rmarkdown::render(
         'templates/assignment_report_de.Rmd',
         output_file = con,
         intermediates_dir = temp_dir,
-        envir = new.env(), # isolate rendering
-        params = list(
-          map = berlin,
-          addresses = addresses,
-          units = r$units,
-          entities = r$entities,
-          NO_ASSIGNMENT = NO_ASSIGNMENT,
-          min_util = MIN_UTILIZATION,
-          max_util = MAX_UTILIZATION,
-          colors = color_vec,
-          optimizable_units = optimizable_units,
-          weights = weights
-        )
-      ))
+        params = params,
+        envir = new.env(parent = globalenv()) # isolate rendering
+      )
     }
   )
 }
