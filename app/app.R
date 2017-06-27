@@ -191,6 +191,7 @@ ui <- fillPage(
                   tabPanel("Import/Export", div(id='io',
                       downloadButton('report', 'Report'),
                       downloadButton('addresses', 'Adressliste'),
+                      downloadButton('serveAddresses', 'Adressliste als CSV'),
                       downloadButton('serveGeoJSON', 'GeoJSON'),
                       downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
                       fileInput('readAssignment', 'Zuordnung Hochladen',
@@ -1078,6 +1079,21 @@ server <- function(input, output, session) {
     }
   )
 
+  output$serveAddresses = downloadHandler(
+    filename = paste0('addresses_', Sys.Date(), '.csv'),
+    content = function(con) {
+      isolate({
+        table = cbind(
+          as.data.frame(addresses),
+          over(addresses, r$units)
+        ) %>% arrange(entity_id, street, no) %>%
+          mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id)) %>%
+          select(Straße=street, Hausnummer=no, Schule=entity_id)
+          
+        write.csv( table, con)
+      })
+    }
+  )
   output$addresses = downloadHandler(
     filename = function() { paste0('addresses_', Sys.Date(), '.pdf') },
     content = function(con) {
