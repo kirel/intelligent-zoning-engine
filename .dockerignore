@@ -1,10 +1,14 @@
 packrat/lib*
+packrat/src
 data
 download
 output
 osrm
 docs
 figs
+log
 .git
 .venv
 .Rproj.user
+*.nb.html
+.RData
