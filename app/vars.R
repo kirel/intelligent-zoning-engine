@@ -1,0 +1,105 @@
+plan(multiprocess)
+
+NONE_SELECTED = '__NONE_SELECTED__'
+NO_ASSIGNMENT = NONE_SELECTED
+
+MIN_UTILIZATION = 0.9
+MAX_UTILIZATION = 1.1
+
+# Load data
+units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
+weights = read_csv('data/weights.csv')
+adjacency = read_csv('data/adjacency.csv', col_types ='cc')
+
+addresses = readOGR('data/addresses.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+
+# Add coordinates to adjacency data frame - just for debugging / visualization
+row.names(units) = units$unit_id
+adjacency = adjacency %>%
+  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=rownames(.))) %>%
+  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
+
+assignment = units@data %>%
+  select(unit_id) %>%
+  left_join(read_csv('data/assignment.csv'), by='unit_id') %>%
+  mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id))
+
+units = units %>% sp::merge(assignment)
+
+entities_df = entities %>% as.data.frame()
+
+rm(assignment)
+
+bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE) %>% subset(BEZ == '07')
+
+entity_ids = unique(entities$entity_id)
+unit_ids = unique(units$unit_id)
+optimizable_units = units %>% as.data.frame %>% filter(population > 0) %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
+population_range = range(units$population, na.rm = T, finite = T)
+
+flog.debug('Data loading complete')
+
+### Helper functions
+
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
+
+# preferrably sample blocks closer to the school
+# should be higher for smaller numbers
+distance_sample_weights = unit_ids %>% map(function(unit_id) {
+  idx = weights$unit_id == unit_id
+  avg = as.double(weights[idx,]$avg)
+  entity_ids = weights[idx,]$entity_id
+  # TODO make function and divide exponent by optimization step
+  weights = (1-(avg-min(avg))/max(avg-min(avg)))^3
+  set_names(weights, entity_ids)
+}) %>% set_names(unit_ids)
+
+distance_sample_probs = function(unit_id, heuristic_exponent=3) {
+  weights = distance_sample_weights[[unit_id]]
+  pot_weights = weights^heuristic_exponent
+  pot_weights/sum(pot_weights)
+}
+
+unit_index = set_names(1:length(units$unit_id), units$unit_id)
+
+entities$selected = F
+# Remark: There is no entities$updated because they have to be redrawn anyway
+entities$highlighted = T # highlight when selected
+entities$hovered = F
+units$selected = F # selected units can be reassigned, locked, etc
+units$highlighted = T # highlight units when assigned entity is selected
+units$locked = F
+units$updated = T # only updated unites need to be redrawn (true for initial render)
+units$hovered = F
+
+# Scales
+# cfac = colorFactor(rainbow(length(entity_ids)), levels=sample(entity_ids))
+colors = brewer.pal(8, 'Set1') # show_col(brewer.pal(9,'Set1'))
+valid_colors = colors[2:8]
+warning_color =  colors[1]
+entity_ids_color = c(
+  "07G16", "07G02", "07G01", "07G21", "07G14", "07G07", "07G15", "07G03", "07G13", "07G12", "07G10", "07G17", "07G06", "07G18",
+  "07G19", "07G24", "07G05", "07G22", "07G23", "07G25", "07G20", "07G36", "07G27", "07G37", "07G35", "07G30", "07G28", "07G32",
+  "07G29", "07G34", "07G26", "07G31"
+)
+palette = rep(valid_colors, length(entity_ids_color)/length(valid_colors)+1)[1:length(entity_ids_color)]
+cfac = colorFactor(palette, levels=entity_ids_color)
+entity_colors = function(entity_id, desaturate = FALSE) {
+  color = cfac(entity_id)
+  ifelse(desaturate, desat(color, 0.3), color)
+}
+
+desat <- function(cols, sat=0.5) {
+  X <- diag(c(1, sat, 1)) %*% rgb2hsv(col2rgb(cols))
+  hsv(X[1,], X[2,], X[3,])
+}
+
+# Colors for Report
+
+color_vec = c(palette, warning_color)
+names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
+
+### Server
