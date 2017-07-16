@@ -1,20 +1,15 @@
-FROM rocker/shiny
+FROM r-base:3.4.0
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y -t unstable libtiff-dev libgdal-dev libgeos-dev libxml2-dev libgit2-dev libssl-dev libv8-dev texlive texlive-latex-extra
+RUN apt-get update && apt-get upgrade -y && apt-get install -y texlive texlive-latex-extra
+RUN apt-get update && apt-get upgrade -y && apt-get install -y libtiff-dev libgdal-dev libgeos-dev libproj-dev libxml2-dev libgit2-dev libssl-dev libv8-dev
 
-ENV APP_DIR /srv/shiny-server
+WORKDIR /app
 
-RUN rm -rf ${APP_DIR}/*
-COPY packrat/packrat.lock ${APP_DIR}/packrat/
-RUN cd ${APP_DIR} && R -e 'install.packages("packrat"); packrat::restore(prompt=FALSE)'
-# creates .Rprofile etc.
-RUN cd ${APP_DIR} && R -e 'packrat::packify()'
-# creates packrat.opts etc. otherwise shiny server crashes
-RUN cd ${APP_DIR} && R -e '1'
+COPY packrat /app/packrat
+RUN R -e 'install.packages("packrat" , repos="http://cran.us.r-project.org")'
+RUN R -e "0" --args --bootstrap-packrat
+RUN R -e 'packrat::restore(restart = FALSE, overwrite.dirty = TRUE)'
 
-# TODO this might be unneccesary
-RUN sed -i.bak 's/run_as shiny;/run_as docker;/' /etc/shiny-server/shiny-server.conf
-RUN chown docker.docker /var/log/shiny-server
-RUN chown docker.docker /srv/shiny-server
+COPY app /app/shiny
 
-COPY app ${APP_DIR}
+CMD R -e 'source("packrat/init.R");options(shiny.autoreload=T,shiny.port=3838,shiny.host="0.0.0.0");shiny::runApp("shiny")'

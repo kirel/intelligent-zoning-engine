@@ -1,3 +1,6 @@
+library(purrr)
+library(googlesheets)
+
 ui <- fillPage(
   shinyStore::initStore("store", "shinyStore-ize1"),
   shinyjs::useShinyjs(),
@@ -10,7 +13,7 @@ ui <- fillPage(
       do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color),
                            ~ paste0(
                              "#map .entity-color-", .x, " {color:", .y, " !important;}\n",
-                             "#map .entity-bg-", .x, " {background-color:", .y, " !important;}\n",
+                             ".entity-bg-", .x, " {background-color:", .y, " !important;}\n",
                              "#map .entity-", .x, " {fill:", .y,";}\n",
                              "#map .unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
                            )))
@@ -33,66 +36,94 @@ ui <- fillPage(
          </filter>
          </svg>')
     ),
-  fillRow(
-    div(
-      id='map-panel',
-      leafletOutput("map", width="100%", height='100%'),
-      div(id="map-controls",
-          checkboxInput("show_utilization", "Auslastung anzeigen", value = TRUE),
-          checkboxInput("show_population", "Population anzeigen", value = FALSE)
+  conditionalPanel(
+    '!output.loggedIn',
+    style='width:100%;height:100%;',
+    h1('IZE'),
+    conditionalPanel('output.loggedIn === undefined', 'Checking login status...'),
+    conditionalPanel('output.loggedIn === false', 'Not logged in', a(href=gs_webapp_auth_url(), 'Connect')),
+    div(style='display:none', textOutput('loggedIn'))
+  ),
+  conditionalPanel(
+    'output.loggedIn',
+    style='width:100%;height:100%;',
+    fillCol(
+      flex = c(NA, 1),
+      div(
+        id='title-panel',
+        h1('IZE'),
+        uiOutput('scenarioSelect'),
+        uiOutput('assignmentSelect')
       ),
-      tabsetPanel(type="tabs", id="tabs",
-                  tabPanel("Details", div(id='detail',
-                                          fillRow(
-                                            div(id='detail--entity',
-                                                h5('Schule:'),
-                                                h4(id='detail--entity--selected-school', uiOutput('selected_entity')),
-                                                div(id='detail--entity--controls',
-                                                    actionButton('deselect_entity', '', icon=icon('remove'))
+      fillRow(
+        div(
+          id='map-panel',
+          leafletOutput("map", width="100%", height='100%'),
+          div(id="map-controls",
+              checkboxInput("show_utilization", "Auslastung anzeigen", value = TRUE),
+              checkboxInput("show_population", "Population anzeigen", value = FALSE)
+          ),
+          tabsetPanel(type="tabs", id="tabs",
+                      tabPanel("Details", div(id='detail',
+                                              fillRow(
+                                                div(id='detail--entity',
+                                                    h5('Schule:'),
+                                                    h4(id='detail--entity--selected-school', uiOutput('selected_entity')),
+                                                    div(id='detail--entity--controls',
+                                                        actionButton('deselect_entity', '', icon=icon('remove'))
+                                                    ),
+                                                    tableOutput('selected_entity_table')
                                                 ),
-                                                tableOutput('selected_entity_table')
-                                            ),
-                                            div(id='detail--units',
-                                                h5('Blöcke:'),
-                                                h4(id='detail--units--selected-units', uiOutput('selected_units')),
-                                                div(id='detail--units--controls',
-                                                    actionButton('deselect_units', '', icon=icon('remove')),
-                                                    actionButton('assign_units', '', icon=tags$i(class='icon-link-unit')),
-                                                    actionButton('deassign_units', '', icon=tags$i(class='icon-unlink-unit')),
-                                                    actionButton('lock_units', '', icon=icon('lock')),
-                                                    actionButton('unlock_units', '', icon=icon('unlock'))
-                                                ),
-                                                tableOutput('selected_units_table')
-                                            )
-                                          )
-                                          # TODO move buttons into UI outputs
-                  )),
-                  tabPanel("Import/Export", div(id='io',
-                                                downloadButton('report', 'Report'),
-                                                downloadButton('addresses', 'Adressliste'),
-                                                downloadButton('serveAddresses', 'Adressliste als CSV'),
-                                                downloadButton('serveGeoJSON', 'GeoJSON'),
-                                                downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
-                                                fileInput('readAssignment', 'Zuordnung Hochladen',
-                                                          accept = c('text/csv',
-                                                                     'text/comma-separated-values',
-                                                                     'text/plain',
-                                                                     '.csv')
-                                                ),
-                                                actionButton('reset_assignment', 'Reset', icon=icon('fast-backward'))
-                  )),
-                  tabPanel("Optimierung", div(id='optimize-panel',
-                                              uiOutput('optimize_button', inline = TRUE),
-                                              plotOutput('fitness', height = '120px')
-                  )),
-                  tabPanel("Über das Projekt", div(id='about',
-                                                   includeMarkdown("about.md")
-                  ))
+                                                div(id='detail--units',
+                                                    h5('Blöcke:'),
+                                                    h4(id='detail--units--selected-units', uiOutput('selected_units')),
+                                                    div(id='detail--units--controls',
+                                                        actionButton('deselect_units', '', icon=icon('remove')),
+                                                        actionButton('assign_units', '', icon=tags$i(class='icon-link-unit')),
+                                                        actionButton('deassign_units', '', icon=tags$i(class='icon-unlink-unit')),
+                                                        actionButton('lock_units', '', icon=icon('lock')),
+                                                        actionButton('unlock_units', '', icon=icon('unlock'))
+                                                    ),
+                                                    tableOutput('selected_units_table')
+                                                )
+                                              )
+                                              # TODO move buttons into UI outputs
+                      )),
+                      tabPanel("Import/Export", div(id='io',
+                                                    downloadButton('report', 'Report'),
+                                                    downloadButton('addresses', 'Adressliste'),
+                                                    downloadButton('serveAddresses', 'Adressliste als CSV'),
+                                                    downloadButton('serveGeoJSON', 'GeoJSON'),
+                                                    downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
+                                                    fileInput('readAssignment', 'Zuordnung Hochladen',
+                                                              accept = c('text/csv',
+                                                                         'text/comma-separated-values',
+                                                                         'text/plain',
+                                                                         '.csv')
+                                                    ),
+                                                    actionButton('reset_assignment', 'Reset', icon=icon('fast-backward'))
+                      )),
+                      tabPanel("Optimierung", div(id='optimize-panel',
+                                                  uiOutput('optimize_button', inline = TRUE),
+                                                  plotOutput('fitness', height = '120px')
+                      )),
+                      tabPanel("Daten", div(id='data',
+                                            uiOutput('connection'),
+                                            h4('Szenarios'),
+                                            uiOutput('scenarios'),
+                                            h4('Zuordnungen'),
+                                            uiOutput('assignments')
+                      )),
+                      tabPanel("Über das Projekt", div(id='about',
+                                                       includeMarkdown("about.md")
+                      ))
+          )
+        ),
+        div(
+          id='table-panel',
+          DT::dataTableOutput("table")
+        )
       )
-    ),
-    div(
-      id='table-panel',
-      DT::dataTableOutput("table")
     )
   ),
   singleton(

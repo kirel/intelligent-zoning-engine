@@ -46,7 +46,7 @@ updateMap = (message) ->
         .toggleClass('over-capacity', utilization > 1)
         .toggleClass('under-capacity', utilization < 1)
       getMapLayers() unless window.mapLayers['entity_meta_'+entity_id]?
-      window.mapLayers['entity_meta_'+entity_id].setRadius(scale(utilization))
+      window.mapLayers['entity_meta_'+entity_id]?.setRadius(scale(utilization))
   )
       
 Shiny.addCustomMessageHandler 'getMapLayers', (message) ->

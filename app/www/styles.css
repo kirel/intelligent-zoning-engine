@@ -2,6 +2,13 @@ body {
   min-width: 1200px;
 }
 
+/*** title ***/
+
+#title-panel > * {
+  display: inline-block;
+  vertical-align: top;
+}
+
 /*** Map ***/
 
 #map-panel {
@@ -70,7 +77,7 @@ body {
 .show-population #map .unit.populationNA { fill-opacity: 0; }
 
 /* see http://iros.github.io/patternfills/sample_css.html */
-#svg-patterns { position: absolute; }
+#svg-patterns { position: absolute; left: -9999px; top: -9999px; }
 #map .unit_meta.unlocked {
   fill: transparent;
 }
@@ -533,4 +540,3 @@ body {
 .icon-link-unit:before {
   content: "\e901";
 }
->>>>>>> master

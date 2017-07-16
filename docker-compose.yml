@@ -1,9 +1,6 @@
 shiny:
   build: .
   volumes:
-    # - ./app:/srv/shiny-server/ # doesn't work because of Packrat
-    - ./log/:/var/log/
+    - ./app:/app/shiny/
   ports:
     - "3838:3838"
-  environment:
-    - "SHINY_LOG_LEVEL=TRACE"

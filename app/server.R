@@ -1,11 +1,59 @@
-server <- function(input, output, session) {
+source('deps.R')
+source('ga.R', local=T)
+source('io.R', local=T)
+source('logging.R', local=T)
+source('vars.R', local=T)
+
+plan(multiprocess)
+
+function(input, output, session) {
   
+  # Auth
+  
+  auth_rev = reactiveVal(0)
+  
+  active_user = reactive({
+    auth_rev()
+    tryCatch(gd_user(), error = function(e) NULL)
+  })
+  
+  observeEvent(input$logout, {
+    auth_rev(auth_rev() + 1)
+    gs_deauth()
+  })
+  
+  observe({
+    query <- parseQueryString(session$clientData$url_search)
+    if (!is.null(query[['code']])) {
+      try({
+        gs_webapp_get_token(query[['code']])
+        flog.debug('Auth status changed')
+        isolate(auth_rev(auth_rev() + 1))
+      })
+    }
+  })
+  
+  output$connection = renderUI({
+    if (is.null(active_user())) {
+      a(href=gs_webapp_auth_url(), 'Connect')  
+    } else {
+      div(
+        paste("Verbunden mit dem Account", active_user()$user$displayName),
+        actionButton('logout', 'Ausloggen')
+      )
+    }
+  })
+  
+  output$loggedIn = reactive({ !is.null(active_user()) })
+  outputOptions(output, "loggedIn", suspendWhenHidden=FALSE)
+
   ### Reactive Values
   
   r = reactiveValues(
-    units=units, entities=entities,
+    units=units,
+    entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
-    map_rev=0, # assignment revision - indicator that the map needs an update
+    map_rev=0, # map revision - indicator that the map needs an update
     selected_entity=NONE_SELECTED,
     previous_selected_entity=NONE_SELECTED,
     selected_entity_index=NULL, # only one can be selected
@@ -14,24 +62,26 @@ server <- function(input, output, session) {
     running_optimization=FALSE,
     optimization_step=0,
     previous_mouseover=NONE_SELECTED)
-  
+
   # variables for R optimization implementation
   ga = reactiveValues(
     population_future=future(NULL),
     population=NULL
   )
   
+  ### TODO check for logged in user here!
+
   mapNeedsUpdate = function() {
     r$map_rev = r$map_rev + 1
   }
-  
+
   tableNeedsUpdate = function() {
     r$assignment_rev = r$assignment_rev + 1
     mapNeedsUpdate()
   }
-  
+
   ### Interaction
-  
+
   observeEvent(input$optimize, {
     flog.debug('Optimize button pressed')
     if (r$running_optimization) {
@@ -42,32 +92,38 @@ server <- function(input, output, session) {
       start_optimization(r$units)
     }
   })
-  
+
   observeEvent(input$assign_units, {
     flog.debug('Assign button pressed')
     r$units[r$units$selected, 'entity_id'] = r$selected_entity
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
+    index = assignment$list %>% detect_index(~ .$name == assignment$current)
+    assignment$list[[index]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id)
+    flog.debug('Updating assignment %s', assignment$list[[index]]$name)
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$deassign_units, {
     flog.debug('Deassign button pressed')
     r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
+    index = assignment$list %>% detect_index(~ .$name == assignment$current)
+    assignment$list[[index]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id)
+    flog.debug('Updating assignment %s', assignment$list[[index]]$name)
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$deselect_units, {
     flog.debug('Deselect button pressed')
     r$units[r$units$selected, 'updated'] = T
     r$units$selected = F
     tableNeedsUpdate()
   })
-  
+
   observeEvent(input$lock_units, {
     flog.debug('Lock button pressed')
     r$units[r$units$selected, 'locked'] = T
@@ -75,7 +131,7 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$unlock_units, {
     flog.debug('Unlock button pressed')
     r$units[r$units$selected, 'locked'] = F
@@ -83,49 +139,53 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
     reset_optimization(r$units)
   })
-  
+
   observeEvent(input$deselect_entity, {
     flog.debug('Deselect button pressed')
     r$selected_entity = NONE_SELECTED
     r$selected_entity_index = NULL
   })
-  
+
   ### Map controls
-  
+
   observe({
     shinyjs::toggleClass("map-panel", "show-utilization", input$show_utilization)
   })
-  
+
   observe({
     shinyjs::toggleClass("map-panel", "show-population", input$show_population)
   })
-  
+
   observeEvent(input$show_population, {
     r$units$updated = T
     mapNeedsUpdate()
   })
-  
+
   ### selection status
-  
+
   observe({
     shinyjs::toggleClass('map-panel', 'entity-selected', r$selected_entity != NONE_SELECTED)
   })
-  
+
   observe({
     shinyjs::toggleClass('map-panel', 'units-selected', sum(r$units$selected) > 0)
   })
-  
+
   ### Localstorage of assignment
-  
+
   observeEvent(input$reset_assignment, {
+    return() # FIXME
+    # TODO change to "save_data" function
     shinyStore::updateStore(session, "assignment", NULL)
     r$units = units
     tableNeedsUpdate()
   })
-  
+
   observeEvent(r$assignment_rev, {
+    return() # FIXME
     if (r$assignment_rev == 0) {
       try(isolate({
+        # TODO change to "load_data" function
         assignment = input$store$assignment %>% charToRaw %>% unserialize
         stopifnot(c('unit_id', 'entity_id', 'locked') %in% colnames(assignment))
         assignemnt = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(assignment)
@@ -133,11 +193,11 @@ server <- function(input, output, session) {
         r$units$locked = ifelse(is.na(assignment$locked), r$units$locked, assignment$locked)
       }))
     }
+    # TODO change to "save_data" function
     shinyStore::updateStore(session, "assignment", r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked) %>% serialize(NULL, ascii=T) %>% rawToChar)
   })
-  
+
   ### load assignment
-  
   observeEvent(input$readAssignment, {
     flog.debug('upload button pressed')
     num_warn = length(warnings())
@@ -149,7 +209,6 @@ server <- function(input, output, session) {
       # need(),  # all unit_ids must be valid
       # need()  # all entity_ids must be valid
     )
-    prev_entities = r$units$entity_id
     new_entities = r$units %>%
       as.data.frame() %>%
       select(unit_id) %>%
@@ -159,6 +218,21 @@ server <- function(input, output, session) {
     tableNeedsUpdate()
   })
   
+  ### assigments from collection
+  observeEvent(assignment$current, {
+    req(currentAssignment())
+    req(currentAssignment()$assignment)
+    flog.debug('Switched to assignment %s', assignment$current)
+    flog.debug('currentAssignment()$name == %s', currentAssignment()$name)
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(currentAssignment()$assignment, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
+    r$units$updated = TRUE
+    tableNeedsUpdate()
+  })
+
   # unit mouseover -> highlight the shape
   observe({
     return()
@@ -181,7 +255,7 @@ server <- function(input, output, session) {
       })
     }
   })
-  
+
   observeEvent(input$map_shape_mouseout, {
     return()
     req(input$map_shape_mouseout$id)
@@ -195,7 +269,7 @@ server <- function(input, output, session) {
       r$units[unit_index[[hovered_unit]], 'updated'] = T
     }
   })
-  
+
   # click on markers -> select entity and highlight units
   # only changes r$selected_entity and r$selected_entity_index
   observeEvent(input$map_marker_click, {
@@ -213,7 +287,7 @@ server <- function(input, output, session) {
     })
     # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
-  
+
   # click on table row
   # only changes r$selected_entity and r$selected_entity_index
   observe({
@@ -225,7 +299,7 @@ server <- function(input, output, session) {
     })
     # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
-  
+
   # click on shapes -> update the selected status
   observeEvent(input$map_shape_click, {
     req(input$map_shape_click$id)
@@ -240,26 +314,26 @@ server <- function(input, output, session) {
     }
     mapNeedsUpdate()
   })
-  
+
   # r$selected_entity watcher: entity selection changed - update blocks
   observe({
     selected_entity = r$selected_entity
-    
+
     isolate({
       flog.debug("selected entity changed to %s from %s", r$selected_entity, r$previous_selected_entity)
-      
+
       previously_highlighted = rep(r$entities$highlighted)
       r$entities$highlighted = r$entities$entity_id == selected_entity | selected_entity == NONE_SELECTED
-      
+
       previously_highlighted = rep(r$units$highlighted)
       r$units$highlighted = r$units$entity_id == selected_entity | selected_entity == NONE_SELECTED
       r$units$updated = r$units$updated | (r$units$highlighted != previously_highlighted)
       mapNeedsUpdate()
     })
   })
-  
+
   ### Update the UI
-  
+
   # UI is not actually updated.
   # Draw a polygon layer and another polygon "effects" or meta layer.
   # Each polygon has a class (that is actually an id) like unit_12345.
@@ -275,7 +349,7 @@ server <- function(input, output, session) {
           'population',
           10+10*as.integer(10*0.9*(population-min(population, na.rm=T))/(max(population, na.rm=T)-min(population, na.rm=T)))
         )) %>% .$c
-      
+
       map = map %>%
         # redraw updated selected units
         addPolygons(
@@ -347,7 +421,7 @@ server <- function(input, output, session) {
       )
     return(map)
   }
-  
+
   updateMapJS = function() {
     utilization = entities_df %>%
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population)), by='entity_id') %>%
@@ -367,10 +441,10 @@ server <- function(input, output, session) {
     )
     session$onFlushed(function() { # run after leaflet
       session$sendCustomMessage(type = 'updateMap',
-                                message = message)      
+                                message = message)
     }, once=TRUE)
   }
-  
+
   # Initial map render
   output$map <- renderLeaflet({
     isolate({
@@ -380,7 +454,7 @@ server <- function(input, output, session) {
         updateMap(r$units, input$show_population)
       # initial caching of map markers
       session$onFlushed(function() { # run after leaflet
-        session$sendCustomMessage(type = 'getMapLayers', message=list())      
+        session$sendCustomMessage(type = 'getMapLayers', message=list())
       }, once=TRUE)
       updateMapJS()
       r$units$updated = F
@@ -388,7 +462,7 @@ server <- function(input, output, session) {
       m
     })
   })
-  
+
   # incremental map update
   observeEvent(r$map_rev, {
     updateMapJS()
@@ -396,9 +470,9 @@ server <- function(input, output, session) {
     return()
     flog.debug('Map updated')
   })
-  
+
   ### optimization
-  
+
   ## High level functions
   #
   # - start_optimization(new_assignment: data.frame(unit_id, entity_id, locked))
@@ -407,7 +481,7 @@ server <- function(input, output, session) {
   # - is_optim_solution_updated() check if there is a new solution
   # - get_optim_solution(): list(solution=data.frame(unit_id, entity_id, locked), score=Numeric) # FIXME locked needed?
   #   fetches the current best solution
-  
+
   start_optimization = function(assignment) {
     # TODO talk to python
     flog.info('(Re-)Starting optimization')
@@ -417,17 +491,17 @@ server <- function(input, output, session) {
     reset_ga_population(assignment)
     # actual optimization is started in main optimization loop # TODO should happen here for python
   }
-  
+
   reset_optimization = function(assignment) {
     if (r$running_optimization) {
       start_optimization(assignment)
     }
   }
-  
+
   stop_optimization = function() {
     # TODO talk to python
   }
-  
+
   is_optim_solution_updated = function() {
     # TODO talk to python
     if (resolved(ga$population_future) & (r$optimization_step != 0)) {
@@ -435,7 +509,7 @@ server <- function(input, output, session) {
       !is.null(future_population)
     } else FALSE
   }
-  
+
   get_optim_solution = function() {
     # TODO talk to python
     future_population = value(ga$population_future)
@@ -444,7 +518,7 @@ server <- function(input, output, session) {
     score = mem_fitness_f(fittest)
     list(solution=fittest, score=score)
   }
-  
+
   # main optimization loop
   observe({
     if (r$running_optimization) {
@@ -454,41 +528,41 @@ server <- function(input, output, session) {
           r$optimization_step = r$optimization_step + 1
           next_optimization_step(r$optimization_step)
         }
-        
+
         # get updated solution
         if (is_optim_solution_updated()) {
           flog.info('Finished optimization step %s', r$optimization_step)
           r$optimization_step = r$optimization_step + 1
-          
+
           solution = get_optim_solution()
-          
+
           r$fittest_fitness = c(r$fittest_fitness, solution$score)
-          
+
           # update relevant values for ui updates
           prev_entities = r$units$entity_id
           new_entities = r$units %>% as.data.frame() %>% select(unit_id) %>%
             left_join(solution$solution, by="unit_id") %>% .$entity_id
           r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
           r$units$updated = r$units$updated | r$units$entity_id != prev_entities
-          
+
           tableNeedsUpdate()
-          
+
           # Start new optimization step # TODO this should happen in Python automatically
           next_optimization_step(r$optimization_step)
         } # otherwise just skip and do nothing in this iteration
-        
+
       })
       invalidateLater(100, session)
     }
   })
-  
+
   output$fitness = renderPlot({
     ggplot() +
       geom_line(aes(x=seq_along(r$fittest_fitness), y=r$fittest_fitness)) +
       geom_line(aes(x=seq_along(diff(r$fittest_fitness))+1, y=diff(r$fittest_fitness)*(-1)), linetype=2) +
       expand_limits(y=0) + labs(x = 'Optimierungsschritt', y = 'Kostenfunktion')
   })
-  
+
   if (DEBUG_ENV) {
     # after each assignment change plot the best solutions fitness
     observeEvent(r$assignment_rev, {
@@ -497,15 +571,15 @@ server <- function(input, output, session) {
         select(unit_id) %>%
         left_join(r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
         mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-      
+
       mem_fitness_f(current, verbose=T)
     })
   }
-  
+
   ### genetic algorithm
-  
+
   ## R implementation of GA # TODO remove
-  
+
   reset_ga_population = function(assignment) {
     # select only blocks with stats and assign random schools for unassigned blocks
     current = units %>% as.data.frame() %>%
@@ -513,15 +587,15 @@ server <- function(input, output, session) {
       select(unit_id) %>%
       left_join(assignment %>% as.data.frame() %>% select(unit_id, entity_id, locked), by='unit_id') %>%
       mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, sample(entity_ids, length(is.na(entity_id)), replace = T), entity_id))
-    
+
     ga$population = list(current)
   }
-  
+
   next_optimization_step = function(step) {
     heuristic_exponent = 20/step^(1) # TODO = 1/2?
     mutation_fraction = max(0.001, 1-(step-1)/3)
     flog.info('Running optimization step %s with mutation_fraction %s and heuristic_exponent %s', step, mutation_fraction, heuristic_exponent)
-    
+
     ga$population_future = future({
       ga_select(
         ga_breed(ga$population,
@@ -536,7 +610,7 @@ server <- function(input, output, session) {
         max_population = 50)
     })
   }
-  
+
   # randomly reassign a number of schools
   mutation_f = function(individual, fraction=0.05, heuristic_exponent=3) {
     if (fraction == 0) return(individual)
@@ -558,7 +632,7 @@ server <- function(input, output, session) {
     individual[mutation_idx, 'entity_id'] = unlist(mutations)
     individual
   }
-  
+
   # randomly mix assignments from two individuals into two new ones
   # TODO only where they are different
   crossover_f = function(a, b) {
@@ -577,30 +651,30 @@ server <- function(input, output, session) {
     child_b[swap_idx, 'entity_id'] = a[swap_idx, 'entity_id']
     list(child_a, child_b)
   }
-  
+
   fitness_f = function(individual, verbose=FALSE) {
     OVER_CAPACITY_PENALTY = 1
     UNDER_CAPACITY_PENALTY = 1
     DIST_WEIGHT = 1/1000^2 # 1000m means penalty of 1
     OVER_CAPACITY_WEIGHT = 1/20/10 # 20 over capacity means penalty of 0.1
     UNDER_CAPACITY_WEIGHT = 1/20/10 # 20 under capacity means penalty of 0.1
-    
+
     # TODO coherence cost as number of connected components
     filtered_edges = adjacency %>%
       inner_join(individual, by=c('from'='unit_id'), copy = T) %>%
       inner_join(individual %>% select(to_unit_id=unit_id, to_entity_id=entity_id), by=c('to'='to_unit_id'), copy = T) %>%
       filter(entity_id == to_entity_id)
-    
+
     # browser() here to debug connected components with following plot:
     # ggplot() +
     #  geom_polygon(aes(x=long, y=lat, group=group), fill='gray', data=broom::tidy(units, region='unit_id')) +
     #  geom_segment(aes(x=from_long, y=from_lat, xend=to_long, yend=to_lat), size=0.1, color='black', data=filtered_edges) +
     #  theme_nothing() + coord_map()
-    
+
     optimum_connected_components = length(entity_ids)
     connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
     coherence_cost = connected_components/optimum_connected_components
-    
+
     individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
@@ -638,13 +712,13 @@ server <- function(input, output, session) {
       }) %>%
       mutate(fitness = max + avg + over_capacity_penalty + under_capacity_penalty + coherence_cost) %>% .$fitness
   }
-  
+
   mem_fitness_f = memoise(fitness_f)
-  
+
   ### /genetic algorithm
-  
+
   ### table
-  
+
   reactive_table_data = reactive({
     rev = r$assignment_rev # recalculate if assignment_rev is altered
     isolate(r$units) %>% as.data.frame() %>%
@@ -664,7 +738,7 @@ server <- function(input, output, session) {
         utilization=pop/capacity
       )
   })
-  
+
   renamed_table_data = reactive({
     d = reactive_table_data() %>%
       select(
@@ -678,10 +752,10 @@ server <- function(input, output, session) {
         BZR=BZR
       )
   })
-  
+
   ### Outputs
-  
-  
+
+
   rowCallback = DT::JS("function(row, data) {",
                        "if (data[4] < ", MIN_UTILIZATION, ") {",
                        "
@@ -698,11 +772,11 @@ $('td:eq(1)', row).append('<span class=\"entity-color-indicator entity-bg-'+data
 $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
 ",
 "}")
-  
+
   # initial table render (see later observe for update)
   output$table = DT::renderDataTable({
     data = isolate(renamed_table_data())
-    
+
     data %>%
       DT::datatable(
         options=list(fixedHeader = T, processing = F, paging = F, searching = F, rowCallback = rowCallback, columnDefs=list(list(targets=c(2,3,5,6,7), class="dt-right"))),
@@ -728,15 +802,15 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
         backgroundRepeat = 'no-repeat',
         backgroundPosition = 'center'
       )
-    
+
   }, server = T)
-  
+
   tableProxy = DT::dataTableProxy('table')
-  
+
   observe({
     tableProxy %>% replaceData(renamed_table_data(), clearSelection='none')
   })
-  
+
   observe({
     flog.debug('r$selected_entity_index changed to %s', r$selected_entity_index)
     currently_selected = isolate(input$table_rows_selected)
@@ -750,24 +824,24 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       tableProxy %>% selectRows(should_be_selected)
     }
   })
-  
+
   # Maybe via row callbacks? https://rstudio.github.io/DT/options.html
-  
+
   ### Variables for detail views
-  
+
   warnIfGt = function(num, thres, s) {
     ifelse(num > thres, paste0('<div class="warning">',s,'</div>'), s)
   }
-  
+
   output$selected_entity = renderUI({
     if (r$selected_entity != NONE_SELECTED) {
       entity = entities@data %>% filter(entity_id == r$selected_entity)
-      HTML(paste0(r$selected_entity, '<span class="entity-color-indicator entity-bg-', r$selected_entity, '"></span>', entity$SCHULNAME))
+      HTML(paste0(r$selected_entity, '<span class="entity-color-indicator entity-bg-', r$selected_entity, '"></span> ', entity$SCHULNAME))
     } else {
       HTML('Keine ausgewählt')
     }
   })
-  
+
   output$selected_entity_table = renderTable({
     if (r$selected_entity != NONE_SELECTED) {
       d = reactive_table_data()[reactive_table_data()$entity_id == r$selected_entity,] %>%
@@ -781,7 +855,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       t(d)
     }
   }, colnames=F, rownames=T, spacing='xs', sanitize.text.function = function(x) x, width='100%')
-  
+
   output$selected_units = renderText({
     if (sum(r$units$selected) > 0) {
       selected_unit_ids = r$units$unit_id[r$units$selected]
@@ -790,7 +864,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       'Keine ausgewählt'
     }
   })
-  
+
   output$selected_units_table = renderTable({
     if (sum(r$units$selected) > 0) {
       selected_units_data = r$units[r$units$selected,] %>% as.data.frame() %>%
@@ -803,20 +877,20 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       t(selected_units_data)
     }
   }, colnames=F, rownames=T, spacing='xs', width='100%')
-  
+
   ### optimization
-  
+
   output$optimize_button = renderUI({
     if (r$running_optimization) {
       actionButton('optimize', label = 'Optimierung stoppen', icon = icon('stop'))
     } else {
       actionButton('optimize', label = 'Optimierung starten', icon = icon('play'))
     }
-    
+
   })
-  
+
   ### Export
-  
+
   output$serveAssignment = downloadHandler(
     filename = function() {
       paste0('assignment_', Sys.Date(), '.csv')
@@ -828,7 +902,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
         filter(entity_id != NO_ASSIGNMENT)
       write_csv(data, con)
     })
-  
+
   output$serveGeoJSON = downloadHandler(
     filename = function() {
       paste0('assignment_', Sys.Date(), '.geojson')
@@ -841,7 +915,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
                       verbose = TRUE, check_exists = FALSE)
     }
   )
-  
+
   output$serveAddresses = downloadHandler(
     filename = paste0('addresses_', Sys.Date(), '.csv'),
     content = function(con) {
@@ -852,7 +926,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
         ) %>% arrange(entity_id, street, no) %>%
           mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id)) %>%
           select(Straße=street, Hausnummer=no, Schule=entity_id)
-        
+
         write.csv( table, con)
       })
     }
@@ -912,4 +986,76 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       )
     }
   )
+  
+  ## Scenarios
+  
+  scenario = reactiveValues(
+    current = '2017',
+    list = list(
+      list(name='2017', entities=as_data_frame(entities@data), units=as_data_frame(units@data)),
+      list(name='2018', entities=as_data_frame(entities@data), units=as_data_frame(units@data))
+    )
+  )
+  
+  currentScenario = reactive({
+    scenario$list %>% detect(~ .$name == scenario$current)
+  })
+  
+  observe({
+    scenario$current = input$currentScenario
+  })
+  
+  output$scenarioSelect = renderUI({
+    selectizeInput('currentScenario', 'Szenario', map(scenario$list, ~ .$name), selected = scenario$current)
+  })
+  
+  output$scenarios = renderUI({
+    tags$ul(scenario$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == scenario$current, '*', '')))))
+  })
+  
+  ## Assignments
+  
+  assignment = reactiveValues(
+    current = 'default',
+    list = list(
+      list(name='default', assignment=units@data %>% select(unit_id, entity_id)),
+      list(name='alternative', assignment=units@data %>% select(unit_id, entity_id))
+    )
+  )
+  
+  currentAssignment = reactive({
+    assignment$list %>% detect(~ .$name == assignment$current)
+  })
+  
+  observe({
+    assignment$current = input$currentAssignment
+  })
+  
+  output$assignmentSelect = renderUI({
+    selectizeInput('currentAssignment', 'Zuordnung', map(assignment$list, ~ .$name), selected = assignment$current)
+  })
+  
+  output$assignments = renderUI({
+    tags$ul(assignment$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == assignment$current, '*', '')))))
+  })
+  
+  ### Save data to google sheets
+  
+  # when there is an active user, load data from sheets
+  observeEvent(active_user(), {
+    flog.debug('user logged in - loading from sheets')
+    # first check if everything is ok - otherwise 
+    sheet = tryCatch(gs_title("IZE assignments"), error = function(e) {
+      # TODO check e for "match"
+      gs_new("IZE assignments", ws_title = "default", input = assignment$list[[1]]$assignment,
+             trim = TRUE, verbose = FALSE)
+    })
+  })
+  
+  # when the assignment list is touched save data to sheets
+  observeEvent(r$sync_to_sheets_rev, {
+    flog.debug('assignments changed - syncing to sheets')
+    gs_title("IZE assignments") %>%
+      gs_edit_cells(ws = assignment$current, input = currentAssignment()$assignment, trim = T)
+  })
 }
