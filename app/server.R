@@ -8,45 +8,6 @@ plan(multiprocess)
 
 function(input, output, session) {
   
-  # Auth
-  
-  auth_rev = reactiveVal(0)
-  
-  active_user = reactive({
-    auth_rev()
-    tryCatch(gd_user(), error = function(e) NULL)
-  })
-  
-  observeEvent(input$logout, {
-    auth_rev(auth_rev() + 1)
-    gs_deauth()
-  })
-  
-  observe({
-    query <- parseQueryString(session$clientData$url_search)
-    if (!is.null(query[['code']])) {
-      try({
-        gs_webapp_get_token(query[['code']])
-        flog.debug('Auth status changed')
-        isolate(auth_rev(auth_rev() + 1))
-      })
-    }
-  })
-  
-  output$connection = renderUI({
-    if (is.null(active_user())) {
-      a(href=gs_webapp_auth_url(), 'Connect')  
-    } else {
-      div(
-        paste("Verbunden mit dem Account", active_user()$user$displayName),
-        actionButton('logout', 'Ausloggen')
-      )
-    }
-  })
-  
-  output$loggedIn = reactive({ !is.null(active_user()) })
-  outputOptions(output, "loggedIn", suspendWhenHidden=FALSE)
-
   ### Reactive Values
   
   r = reactiveValues(
@@ -1013,6 +974,48 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     tags$ul(scenario$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == scenario$current, '*', '')))))
   })
   
+  output$serveScenarios = downloadHandler(
+    filename = function() {
+      paste0('scenarios_', Sys.Date(), '.xlsx')
+    },
+    content = function(con) {
+      browser()
+      scenario$list %>% reduce(function(acc, sc) {
+        acc[[paste('entities', sc$name)]] = sc$entities
+        acc[[paste('units', sc$name)]] = sc$units
+        acc
+      }, .init = list()) %>% write.xlsx(con)
+    }
+  )
+  
+  observeEvent(input$readScenarios, {
+    flog.debug('reading scenarios')
+    num_warn = length(warnings())
+
+    data = getSheetNames(input$readScenarios$datapath) %>%
+      set_names() %>%
+      map(read_xlsx, path = input$readScenarios$datapath)
+    scenario_list = names(data) %>% grep('units', ., value=T) %>%
+      map(function(sheet_name) {
+        scenario_name = substring(sheet_name, 7)
+        list(
+          name = scenario_name,
+          units = data[[paste('units', scenario_name)]],
+          entities = data[[paste('entities', scenario_name)]]
+          )
+      })
+    scenario$list = scenario_list
+    scenario$current = scenario_list[[1]]$name
+        
+    num_warn = length(warnings()) - num_warn
+    validate(
+      need(num_warn == 0,
+           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+      # need(),  # all unit_ids must be valid
+      # need()  # all entity_ids must be valid
+    )
+  })
+  
   ## Assignments
   
   assignment = reactiveValues(
@@ -1039,23 +1042,4 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     tags$ul(assignment$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == assignment$current, '*', '')))))
   })
   
-  ### Save data to google sheets
-  
-  # when there is an active user, load data from sheets
-  observeEvent(active_user(), {
-    flog.debug('user logged in - loading from sheets')
-    # first check if everything is ok - otherwise 
-    sheet = tryCatch(gs_title("IZE assignments"), error = function(e) {
-      # TODO check e for "match"
-      gs_new("IZE assignments", ws_title = "default", input = assignment$list[[1]]$assignment,
-             trim = TRUE, verbose = FALSE)
-    })
-  })
-  
-  # when the assignment list is touched save data to sheets
-  observeEvent(r$sync_to_sheets_rev, {
-    flog.debug('assignments changed - syncing to sheets')
-    gs_title("IZE assignments") %>%
-      gs_edit_cells(ws = assignment$current, input = currentAssignment()$assignment, trim = T)
-  })
 }

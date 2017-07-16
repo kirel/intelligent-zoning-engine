@@ -665,9 +665,9 @@ Requires: BH, R6, Rcpp, hms, tibble
 
 Package: readxl
 Source: CRAN
-Version: 0.1.1
-Hash: 6b8ba4ec18d4ac9a505dd799e378eafa
-Requires: Rcpp
+Version: 1.0.0
+Hash: 55748d32d06e114bdc4a65d5029cf881
+Requires: Rcpp, cellranger, tibble
 
 Package: registry
 Source: CRAN
