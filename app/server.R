@@ -59,11 +59,11 @@ function(input, output, session) {
     r$units[r$units$selected, 'entity_id'] = r$selected_entity
     r$units[r$units$selected, 'highlighted'] = T
     r$units[r$units$selected, 'updated'] = T
-    index = assignment$list %>% detect_index(~ .$name == assignment$current)
-    assignment$list[[index]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id)
-    flog.debug('Updating assignment %s', assignment$list[[index]]$name)
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+    flog.debug('Updating assignment %s', assignment$list[[currentAssignmentIndex()]]$name)
   })
 
   observeEvent(input$deassign_units, {
@@ -71,11 +71,11 @@ function(input, output, session) {
     r$units[r$units$selected, 'entity_id'] = NONE_SELECTED
     r$units[r$units$selected, 'highlighted'] = T # FIXME wat?
     r$units[r$units$selected, 'updated'] = T
-    index = assignment$list %>% detect_index(~ .$name == assignment$current)
-    assignment$list[[index]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id)
-    flog.debug('Updating assignment %s', assignment$list[[index]]$name)
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+    flog.debug('Updating assignment %s', assignment$list[[currentAssignmentIndex()]]$name)
   })
 
   observeEvent(input$deselect_units, {
@@ -91,6 +91,8 @@ function(input, output, session) {
     r$units[r$units$selected, 'updated'] = T
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
   })
 
   observeEvent(input$unlock_units, {
@@ -99,6 +101,8 @@ function(input, output, session) {
     r$units[r$units$selected, 'updated'] = T
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
   })
 
   observeEvent(input$deselect_entity, {
@@ -130,68 +134,6 @@ function(input, output, session) {
 
   observe({
     shinyjs::toggleClass('map-panel', 'units-selected', sum(r$units$selected) > 0)
-  })
-
-  ### Localstorage of assignment
-
-  observeEvent(input$reset_assignment, {
-    return() # FIXME
-    # TODO change to "save_data" function
-    shinyStore::updateStore(session, "assignment", NULL)
-    r$units = units
-    tableNeedsUpdate()
-  })
-
-  observeEvent(r$assignment_rev, {
-    return() # FIXME
-    if (r$assignment_rev == 0) {
-      try(isolate({
-        # TODO change to "load_data" function
-        assignment = input$store$assignment %>% charToRaw %>% unserialize
-        stopifnot(c('unit_id', 'entity_id', 'locked') %in% colnames(assignment))
-        assignemnt = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(assignment)
-        r$units$entity_id = ifelse(is.na(assignment$entity_id), r$units$entity_id, assignment$entity_id)
-        r$units$locked = ifelse(is.na(assignment$locked), r$units$locked, assignment$locked)
-      }))
-    }
-    # TODO change to "save_data" function
-    shinyStore::updateStore(session, "assignment", r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked) %>% serialize(NULL, ascii=T) %>% rawToChar)
-  })
-
-  ### load assignment
-  observeEvent(input$readAssignment, {
-    flog.debug('upload button pressed')
-    num_warn = length(warnings())
-    upload = read_csv(input$readAssignment$datapath)
-    num_warn = length(warnings()) - num_warn
-    validate(
-      need(num_warn == 0,
-           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
-      # need(),  # all unit_ids must be valid
-      # need()  # all entity_ids must be valid
-    )
-    new_entities = r$units %>%
-      as.data.frame() %>%
-      select(unit_id) %>%
-      left_join(upload, by="unit_id") %>% .$entity_id
-    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
-    r$units$updated = TRUE
-    tableNeedsUpdate()
-  })
-  
-  ### assigments from collection
-  observeEvent(assignment$current, {
-    req(currentAssignment())
-    req(currentAssignment()$assignment)
-    flog.debug('Switched to assignment %s', assignment$current)
-    flog.debug('currentAssignment()$name == %s', currentAssignment()$name)
-    new_entities = r$units %>%
-      as.data.frame() %>%
-      select(unit_id) %>%
-      left_join(currentAssignment()$assignment, by="unit_id") %>% .$entity_id
-    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
-    r$units$updated = TRUE
-    tableNeedsUpdate()
   })
 
   # unit mouseover -> highlight the shape
@@ -852,18 +794,6 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
 
   ### Export
 
-  output$serveAssignment = downloadHandler(
-    filename = function() {
-      paste0('assignment_', Sys.Date(), '.csv')
-    },
-    content = function(con) {
-      data = isolate(r$units) %>%
-        as.data.frame() %>%
-        select(unit_id, entity_id) %>%
-        filter(entity_id != NO_ASSIGNMENT)
-      write_csv(data, con)
-    })
-
   output$serveGeoJSON = downloadHandler(
     filename = function() {
       paste0('assignment_', Sys.Date(), '.geojson')
@@ -974,6 +904,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     tags$ul(scenario$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == scenario$current, '*', '')))))
   })
   
+  # download scenarios
   output$serveScenarios = downloadHandler(
     filename = function() {
       paste0('scenarios_', Sys.Date(), '.xlsx')
@@ -988,6 +919,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     }
   )
   
+  # upload scenarios
   observeEvent(input$readScenarios, {
     flog.debug('reading scenarios')
     num_warn = length(warnings())
@@ -1021,13 +953,17 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   assignment = reactiveValues(
     current = 'default',
     list = list(
-      list(name='default', assignment=units@data %>% select(unit_id, entity_id)),
-      list(name='alternative', assignment=units@data %>% select(unit_id, entity_id))
+      list(name='default', assignment=units@data %>% select(unit_id, entity_id, locked)),
+      list(name='alternative', assignment=units@data %>% select(unit_id, entity_id, locked))
     )
   )
   
+  currentAssignmentIndex = reactive({
+    assignment$list %>% detect_index(~ .$name == assignment$current)
+  })
+  
   currentAssignment = reactive({
-    assignment$list %>% detect(~ .$name == assignment$current)
+    assignment$list[[currentAssignmentIndex()]]
   })
   
   observe({
@@ -1040,6 +976,92 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   
   output$assignments = renderUI({
     tags$ul(assignment$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == assignment$current, '*', '')))))
+  })
+  
+  # assigments from collection
+  observeEvent(assignment$current, {
+    req(currentAssignment())
+    req(currentAssignment()$assignment)
+    flog.debug('Switched to assignment %s', assignment$current)
+    flog.debug('currentAssignment()$name == %s', currentAssignment()$name)
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(currentAssignment()$assignment, by="unit_id")
+    r$units$entity_id = ifelse(is.na(new_entities$entity_id), NONE_SELECTED, new_entities$entity_id)
+    r$units$locked = ifelse(is.na(new_entities$locked), FALSE, new_entities$locked)
+    r$units$updated = TRUE
+    tableNeedsUpdate()
+  })
+  
+  # load assignment from upload
+  observeEvent(input$readAssignment, {
+    flog.debug('upload button pressed')
+    num_warn = length(warnings())
+    upload = read_csv(input$readAssignment$datapath)
+    num_warn = length(warnings()) - num_warn
+    validate(
+      need(num_warn == 0,
+           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+      # need(),  # all unit_ids must be valid
+      # need()  # all entity_ids must be valid
+    )
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(upload, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
+    r$units$updated = TRUE
+    # TODO wrap in function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+    tableNeedsUpdate()
+  })
+  
+  # download assignments
+  output$serveAssignment = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.csv')
+    },
+    content = function(con) {
+      data = isolate(r$units) %>%
+        as.data.frame() %>%
+        select(unit_id, entity_id) %>%
+        filter(entity_id != NO_ASSIGNMENT)
+      write_csv(data, con)
+    }
+  )
+  
+  ### Localstorage of assignment
+  
+  observeEvent(input$reset_assignment, {
+    shinyStore::updateStore(session, "assignment", NULL)
+    r$units = units
+    tableNeedsUpdate()
+    # TODO wrap in function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+  })
+  
+  observeEvent(r$assignment_rev, {
+    if (r$assignment_rev == 0) {
+      try(isolate({
+        # Initial loading
+        assignment_from_store = input$store$assignment %>% charToRaw %>% unserialize
+        stopifnot(c('current', 'list') %in% names(assignment))
+        assignment$current = assignment_from_store$current
+        assignment$list = assignment_from_store$list
+        # TODO this should not be necessary!
+        new_entities = r$units %>%
+          as.data.frame() %>%
+          select(unit_id) %>%
+          left_join(currentAssignment()$assignment, by="unit_id")
+        r$units$entity_id = ifelse(is.na(new_entities$entity_id), NONE_SELECTED, new_entities$entity_id)
+        r$units$locked = ifelse(is.na(new_entities$locked), FALSE, new_entities$locked)
+        r$units$updated = TRUE
+        #tableNeedsUpdate()
+      }))
+    }
+    # TODO change to "save_data" function
+    shinyStore::updateStore(session, "assignment", assignment %>% reactiveValuesToList() %>% serialize(NULL, ascii=T) %>% rawToChar)
   })
   
 }
