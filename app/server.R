@@ -184,7 +184,7 @@ function(input, output, session) {
         clicked_marker = sub('entity_', '', input$map_marker_click$id)
         r$previous_selected_entity = r$selected_entity
         r$selected_entity = ifelse(clicked_marker == r$selected_entity, NONE_SELECTED, clicked_marker)
-        index = entities$entity_id %>% detect_index(~ .x == r$selected_entity)
+        index = r$entities$entity_id %>% detect_index(~ .x == r$selected_entity)
         if (is.null(index) | index == 0) r$selected_entity_index = NULL else r$selected_entity_index = index
       }
     })
@@ -198,7 +198,7 @@ function(input, output, session) {
     flog.debug('row %s clicked', row)
     isolate({
       r$selected_entity_index = row
-      r$selected_entity = ifelse(is.null(row), NONE_SELECTED, entities$entity_id[row])
+      r$selected_entity = ifelse(is.null(row), NONE_SELECTED, r$entities$entity_id[row])
     })
     # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
@@ -578,7 +578,7 @@ function(input, output, session) {
     connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
     coherence_cost = connected_components/optimum_connected_components
 
-    individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
+    individual %>% inner_join(r$units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
       summarise(
@@ -586,7 +586,7 @@ function(input, output, session) {
         max=max(max), # per catchment area look at maximum distance
         population=sum(population)
       ) %>%
-      inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
+      inner_join(r$entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
       rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(
@@ -636,7 +636,7 @@ function(input, output, session) {
         pop=sum(population, na.rm=T),
         sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
-      left_join(entities %>% as.data.frame %>% select(entity_id, BZR, capacity), by='entity_id') %>%
+      left_join(r$entities %>% as.data.frame %>% select(entity_id, BZR, capacity), by='entity_id') %>%
       mutate(
         utilization=pop/capacity
       )
@@ -738,7 +738,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
 
   output$selected_entity = renderUI({
     if (r$selected_entity != NONE_SELECTED) {
-      entity = entities@data %>% filter(entity_id == r$selected_entity)
+      entity = r$entities %>% as.data.frame() %>% filter(entity_id == r$selected_entity)
       HTML(paste0(r$selected_entity, '<span class="entity-color-indicator entity-bg-', r$selected_entity, '"></span> ', entity$SCHULNAME))
     } else {
       HTML('Keine ausgewählt')
@@ -883,8 +883,8 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   scenario = reactiveValues(
     current = '2017',
     list = list(
-      list(name='2017', entities=as_data_frame(entities@data), units=as_data_frame(units@data)),
-      list(name='2018', entities=as_data_frame(entities@data), units=as_data_frame(units@data))
+      list(name='2017', entities=entities@data %>% select(entity_id, SCHULNAME, capacity), units=units@data %>% select(unit_id, population, sgbIIu65)),
+      list(name='2018', entities=entities@data %>% select(entity_id, SCHULNAME, capacity), units=units@data %>% select(unit_id, population, sgbIIu65))
     )
   )
   
@@ -902,6 +902,31 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   
   output$scenarios = renderUI({
     tags$ul(scenario$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == scenario$current, '*', '')))))
+  })
+  
+  # activate scenario from list
+  observeEvent(scenario$current, {
+    req(currentScenario(), currentScenario()$entities, currentScenario()$units)
+    flog.debug('Switched to scenario %s', scenario$current)
+    flog.debug('currentScenario()$name == %s', currentScenario()$name)
+    # update units
+    new_units = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(currentScenario()$units, by="unit_id")
+    r$units$population = new_units$population
+    r$units$sgbIIu65 = new_units$sgbIIu65
+    r$units$updated = TRUE
+    # update entities
+    new_entities = r$entities %>%
+      as.data.frame() %>%
+      select(entity_id) %>%
+      left_join(currentScenario()$entities, by="entity_id")
+    r$entities$capacity = new_entities$capacity
+    # FIXME do I need this?
+    # r$entities$updated = TRUE
+    
+    tableNeedsUpdate()
   })
   
   # download scenarios
@@ -948,6 +973,27 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       )
       # chache in localstorage
       shinyStore::updateStore(session, "scenario", scenario %>% reactiveValuesToList() %>% serialize(NULL, ascii=T) %>% rawToChar)
+      
+      # FIXME this is duplicate
+      
+      # update units
+      new_units = r$units %>%
+        as.data.frame() %>%
+        select(unit_id) %>%
+        left_join(currentScenario()$units, by="unit_id")
+      r$units$population = new_units$population
+      r$units$sgbIIu65 = new_units$sgbIIu65
+      r$units$updated = TRUE
+      # update entities
+      new_entities = r$entities %>%
+        as.data.frame() %>%
+        select(entity_id) %>%
+        left_join(currentScenario()$entities, by="entity_id")
+      r$entities$capacity = new_entities$capacity
+      # FIXME do I need this?
+      # r$entities$updated = TRUE
+      
+      tableNeedsUpdate()
     })
   })
   
@@ -989,7 +1035,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     tags$ul(assignment$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == assignment$current, '*', '')))))
   })
   
-  # assigments from collection
+  # activate assigment from list
   observeEvent(assignment$current, {
     req(currentAssignment())
     req(currentAssignment()$assignment)
