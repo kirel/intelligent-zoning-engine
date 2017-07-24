@@ -447,6 +447,9 @@ function(input, output, session) {
             left_join(solution$solution, by="unit_id") %>% .$entity_id
           r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
           r$units$updated = r$units$updated | r$units$entity_id != prev_entities
+          
+          # TODO separate update function
+          assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
 
           tableNeedsUpdate()
 
