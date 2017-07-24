@@ -910,7 +910,6 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       paste0('scenarios_', Sys.Date(), '.xlsx')
     },
     content = function(con) {
-      browser()
       scenario$list %>% reduce(function(acc, sc) {
         acc[[paste('entities', sc$name)]] = sc$entities
         acc[[paste('units', sc$name)]] = sc$units
@@ -921,32 +920,44 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   
   # upload scenarios
   observeEvent(input$readScenarios, {
-    flog.debug('reading scenarios')
-    num_warn = length(warnings())
-
-    data = getSheetNames(input$readScenarios$datapath) %>%
-      set_names() %>%
-      map(read_xlsx, path = input$readScenarios$datapath)
-    scenario_list = names(data) %>% grep('units', ., value=T) %>%
-      map(function(sheet_name) {
-        scenario_name = substring(sheet_name, 7)
-        list(
-          name = scenario_name,
-          units = data[[paste('units', scenario_name)]],
-          entities = data[[paste('entities', scenario_name)]]
+    try({
+      flog.debug('reading scenarios')
+      num_warn = length(warnings())
+      
+      data = getSheetNames(input$readScenarios$datapath) %>%
+        set_names() %>%
+        map(read_xlsx, path = input$readScenarios$datapath)
+      scenario_list = names(data) %>% grep('units', ., value=T) %>%
+        map(function(sheet_name) {
+          scenario_name = substring(sheet_name, 7)
+          list(
+            name = scenario_name,
+            units = data[[paste('units', scenario_name)]],
+            entities = data[[paste('entities', scenario_name)]]
           )
-      })
-    scenario$list = scenario_list
-    scenario$current = scenario_list[[1]]$name
-        
-    num_warn = length(warnings()) - num_warn
-    validate(
-      need(num_warn == 0,
-           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
-      # need(),  # all unit_ids must be valid
-      # need()  # all entity_ids must be valid
-    )
+        })
+      scenario$list = scenario_list
+      scenario$current = scenario_list[[1]]$name
+      
+      num_warn = length(warnings()) - num_warn
+      validate(
+        need(num_warn == 0,
+             sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+        # need(),  # all unit_ids must be valid
+        # need()  # all entity_ids must be valid
+      )
+      # chache in localstorage
+      shinyStore::updateStore(session, "scenario", scenario %>% reactiveValuesToList() %>% serialize(NULL, ascii=T) %>% rawToChar)
+    })
   })
+  
+  # load scenarios from localstorage
+  observeEvent(input$store$scenario, {
+    scenario_from_store = input$store$scenario %>% charToRaw %>% unserialize
+    stopifnot(c('current', 'list') %in% names(scenario_from_store))
+    scenario$current = scenario_from_store$current
+    scenario$list = scenario_from_store$list
+  }, once = TRUE)
   
   ## Assignments
   
@@ -1031,8 +1042,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     }
   )
   
-  ### Localstorage of assignment
-  
+  # reset current assignment TODO remove (just for debugging)
   observeEvent(input$reset_assignment, {
     shinyStore::updateStore(session, "assignment", NULL)
     r$units = units
@@ -1041,27 +1051,29 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
   })
   
+  # Initial loading from localstorage
+  observeEvent(input$store$assignment, {
+    try({
+      assignment_from_store = input$store$assignment %>% charToRaw %>% unserialize
+      stopifnot(c('current', 'list') %in% names(assignment_from_store))
+      assignment$current = assignment_from_store$current
+      assignment$list = assignment_from_store$list
+      # TODO this should not be necessary!
+      new_entities = r$units %>%
+        as.data.frame() %>%
+        select(unit_id) %>%
+        left_join(currentAssignment()$assignment, by="unit_id")
+      r$units$entity_id = ifelse(is.na(new_entities$entity_id), NONE_SELECTED, new_entities$entity_id)
+      r$units$locked = ifelse(is.na(new_entities$locked), FALSE, new_entities$locked)
+      r$units$updated = TRUE
+      #tableNeedsUpdate()
+    })
+  }, once = TRUE)
+  
+  # Save to localstorage on changes
   observeEvent(r$assignment_rev, {
-    if (r$assignment_rev == 0) {
-      try(isolate({
-        # Initial loading
-        assignment_from_store = input$store$assignment %>% charToRaw %>% unserialize
-        stopifnot(c('current', 'list') %in% names(assignment))
-        assignment$current = assignment_from_store$current
-        assignment$list = assignment_from_store$list
-        # TODO this should not be necessary!
-        new_entities = r$units %>%
-          as.data.frame() %>%
-          select(unit_id) %>%
-          left_join(currentAssignment()$assignment, by="unit_id")
-        r$units$entity_id = ifelse(is.na(new_entities$entity_id), NONE_SELECTED, new_entities$entity_id)
-        r$units$locked = ifelse(is.na(new_entities$locked), FALSE, new_entities$locked)
-        r$units$updated = TRUE
-        #tableNeedsUpdate()
-      }))
-    }
     # TODO change to "save_data" function
     shinyStore::updateStore(session, "assignment", assignment %>% reactiveValuesToList() %>% serialize(NULL, ascii=T) %>% rawToChar)
-  })
+  }, ignoreInit = TRUE)
   
 }
