@@ -71,3 +71,7 @@ units$highlighted = T # highlight units when assigned entity is selected
 units$locked = F
 units$updated = T # only updated unites need to be redrawn (true for initial render)
 units$hovered = F
+
+next_unique_name = function(from_name, forbidden, postfix = 'copy') {
+  c('', seq(1000)+1) %>% purrr::map(~ trimws(paste(from_name, postfix, .x))) %>% purrr::detect(~ !.x %in% forbidden)
+}

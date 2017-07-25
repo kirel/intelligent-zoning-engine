@@ -4,10 +4,29 @@ body {
 
 /*** title ***/
 
+#title-panel {
+  background: white;
+}
+
 #title-panel > * {
   display: inline-block;
   vertical-align: top;
+  white-space: normal;
 }
+
+#manage-assignments > label {
+  width: 100%;
+}
+
+#renameAssignment {
+  display: inline-block;
+}
+
+#renameAssignment .form-group {
+  margin: 0;
+  width: 200px;
+}
+
 
 /*** Map ***/
 
@@ -112,6 +131,7 @@ body {
   height: 100%; overflow: scroll;
   background-color:lightgrey;
   border-spacing:10px;
+  z-index: -999;
 }
 
 #table-panel th {

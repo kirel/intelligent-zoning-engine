@@ -42,7 +42,13 @@ ui <- fillPage(
       id='title-panel',
       h1('IZE'),
       uiOutput('scenarioSelect'),
-      uiOutput('assignmentSelect')
+      uiOutput('assignmentSelect'),
+      div(id='manage-assignments', class='form-group',
+          tags$label('Zuordnungen verwalten'),
+          actionButton('copyAssignment', '', icon = icon('plus')),
+          actionButton('removeAssignment', '', icon = icon('trash')),
+          uiOutput('renameAssignment')
+      )
     ),
     fillRow(
       div(

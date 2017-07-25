@@ -896,6 +896,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   })
   
   observe({
+    req(input$currentScenario %in% (scenario$list %>% map('name')))
     scenario$current = input$currentScenario
   })
   
@@ -1012,6 +1013,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   
   assignment = reactiveValues(
     current = 'default',
+    editing = FALSE,
     list = list(
       list(name='default', assignment=units@data %>% select(unit_id, entity_id, locked)),
       list(name='alternative', assignment=units@data %>% select(unit_id, entity_id, locked))
@@ -1027,11 +1029,57 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   })
   
   observe({
+    req(input$currentAssignment %in% (assignment$list %>% map('name')))
+    flog.debug('Setting current assignment from select')
     assignment$current = input$currentAssignment
   })
   
   output$assignmentSelect = renderUI({
     selectizeInput('currentAssignment', 'Zuordnung', map(assignment$list, ~ .$name), selected = assignment$current)
+  })
+  
+  observeEvent(input$copyAssignment, {
+    new_name = next_unique_name(assignment$current, assignment$list %>% map('name'))
+    new_assignment = list(name=new_name, assignment=cbind(assignment$list[[currentAssignmentIndex()]]$assignment)) # FIXME how to properly copy?
+    assignment$list[[length(assignment$list)+1]] = new_assignment
+    # assignment$current = new_assignment$name
+    updateSelectizeInput(session, 'currentAssignment', selected = new_assignment$name)
+  })
+  
+  observeEvent(input$removeAssignment, {
+    req(length(assignment$list) > 1)
+    showModal(modalDialog(
+      title = "Zuordnung entfernen",
+      "Sind Sie sicher?",
+      easyClose = TRUE,
+      footer = tagList(
+        modalButton("Abbrechen"),
+        actionButton('removeAssignmentConfirm', 'Löschen', icon=icon('trash'), class='btn-danger')
+      )
+    ))
+  })
+  
+  observeEvent(input$removeAssignmentConfirm, {
+    removeModal()
+    req(length(assignment$list) > 1)
+    assignment$list = assignment$list %>% discard(~ .x$name == assignment$current)
+    assignment$current = assignment$list[[1]]$name
+  })
+  
+  observeEvent(input$editAssignmentName, {
+    if (assignment$editing && isTruthy(input$newAssignmentName) && !(input$newAssignmentName %in% map(assignment$list, 'name'))) {
+      new_name = trimws(input$newAssignmentName)
+      assignment$list[[currentAssignmentIndex()]]$name = new_name
+      assignment$current = new_name
+    }
+    assignment$editing = !assignment$editing
+  })
+  
+  output$renameAssignment = renderUI({
+    tagList(
+      div(textInput('newAssignmentName', NULL, value=assignment$current), style=ifelse(assignment$editing, 'display:inline-block', 'display:none')),
+      actionButton('editAssignmentName', '', icon = icon(ifelse(assignment$editing, 'save', 'edit')))
+    )
   })
   
   output$assignments = renderUI({
