@@ -1,6 +1,3 @@
-options(googlesheets.webapp.client_id = "1010622408793-2ausgp88cdesnfcrd2jogtb5872b25ip.apps.googleusercontent.com",
-        googlesheets.webapp.client_secret = "x38ERd6aD1TQgbVK-RAFx0qY",
-        googlesheets.webapp.redirect_uri = "http://127.0.0.1:3838")
 options(shiny.port=3838)
 
 library(RColorBrewer)
