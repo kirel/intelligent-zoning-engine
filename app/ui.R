@@ -118,12 +118,6 @@ ui <- fillPage(
                                                 uiOutput('optimize_button', inline = TRUE),
                                                 plotOutput('fitness', height = '120px')
                     )),
-                    tabPanel("Daten", div(id='data',
-                                          h4('Szenarios'),
-                                          uiOutput('scenarios'),
-                                          h4('Zuordnungen'),
-                                          uiOutput('assignments')
-                    )),
                     tabPanel("Über das Projekt", div(id='about',
                                                      includeMarkdown("about.md")
                     ))

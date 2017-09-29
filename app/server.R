@@ -904,10 +904,6 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     selectizeInput('currentScenario', 'Szenario', map(scenario$list, ~ .$name), selected = scenario$current)
   })
   
-  output$scenarios = renderUI({
-    tags$ul(scenario$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == scenario$current, '*', '')))))
-  })
-  
   # activate scenario from list
   observeEvent(scenario$current, {
     req(currentScenario(), currentScenario()$entities, currentScenario()$units)
@@ -1080,10 +1076,6 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
       div(textInput('newAssignmentName', NULL, value=assignment$current), style=ifelse(assignment$editing, 'display:inline-block', 'display:none')),
       actionButton('editAssignmentName', '', icon = icon(ifelse(assignment$editing, 'save', 'edit')))
     )
-  })
-  
-  output$assignments = renderUI({
-    tags$ul(assignment$list %>% map(~ tags$li(paste(.$name, ifelse(.$name == assignment$current, '*', '')))))
   })
   
   # activate assigment from list
