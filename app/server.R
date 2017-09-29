@@ -881,6 +881,51 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     }
   )
   
+  output$excel_report = downloadHandler(
+    filename = function() { paste0('report_', Sys.Date(), '.xlsx') },
+    content = function(con) {
+      temp_dir = tempdir()
+      # TODO DRY this (it's the same as reactive table)
+      # FIXME this needs to be the cross product of scenarios and assignments
+      expand.grid(scenario_idx=1:length(scenario$list), assignment_idx=1:length(assignment$list)) %>%
+        transpose %>%
+        reduce(function(acc, idx) {
+          sc = scenario$list[[idx$scenario_idx]]
+          ass = assignment$list[[idx$assignment_idx]]
+          df = sc$units %>%
+            inner_join(ass$assignment, by='unit_id') %>%
+            filter(entity_id != NO_ASSIGNMENT) %>%
+            left_join(weights, by=c('unit_id', 'entity_id')) %>%
+            group_by(entity_id) %>%
+            summarise(
+              num_units=n(),
+              min_dist=min(min, na.rm=T),
+              avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
+              max_dist=max(max, na.rm=T),
+              pop=sum(population, na.rm=T),
+              sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
+            ) %>%
+            left_join(sc$entities, by='entity_id') %>%
+            mutate(
+              utilization=pop/capacity
+            ) %>%
+            select(
+              Schule=entity_id,
+              Schulname=SCHULNAME,
+              Kapazität=capacity,
+              Kinder=pop,
+              Auslastung=utilization,
+              #`SGBII(u.65)`=sgbIIu65,
+              `Weg (Ø)`=avg_dist,
+              `Weg (max)`=max_dist
+            )
+  
+          acc[[paste(sc$name, ass$name)]] = df
+          acc
+        }, .init = list()) %>% write.xlsx(con)
+    }
+  )
+  
   ## Scenarios
   
   scenario = reactiveValues(
