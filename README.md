@@ -89,6 +89,10 @@ Documentation for me. Adapt to your own server.
     docker-compose -f docker-compose-prod.yml up -d
     open https://ize.idalab-dev.de
 
+## Testing PDF reports
+
+    Rscript prep_report.R && open app/templates/assignment_report_de.pdf
+
 ## Datenkatalog
 
 See `DATA.md`

@@ -1,7 +1,7 @@
 ---
 title: "Schule-Block-Zuordnung"
-author: "idalab GmbH"
-date: '`r format(Sys.time(), "%B %d, %Y")`'
+author: '`r paste(params$scenario_name, params$assignment_name, sep=" / ")`'
+date: '`r format(Sys.time(), "%e\\. %B %Y")`'
 output: pdf_document
 header-includes:
   - \usepackage{booktabs}
@@ -10,6 +10,8 @@ header-includes:
   - \definecolor{BrewerRed}{HTML}{E41A1C}
 classoption: a4paper
 params:
+  scenario_name: NA
+  assignment_name: NA
   map: NA
   addresses: NA
   units: NA

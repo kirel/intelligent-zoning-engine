@@ -830,6 +830,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     content = function(con) {
       temp_dir = tempdir()
       params = list(
+        assignment_name = assignment$current,
         addresses = addresses,
         units = r$units,
         entities = r$entities,
@@ -860,6 +861,8 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
         write_rds(berlin, map_path, compress = 'gz')
       }
       params = list(
+        scenario_name = scenario$current,
+        assignment_name = assignment$current,
         map = berlin,
         addresses = addresses,
         units = r$units,
@@ -1002,8 +1005,8 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
           scenario_name = substring(sheet_name, 7)
           list(
             name = scenario_name,
-            units = data[[paste('units', scenario_name)]],
-            entities = data[[paste('entities', scenario_name)]]
+            units = data[[paste('units', scenario_name)]], # FIXME select relevant cols?
+            entities = data[[paste('entities', scenario_name)]] # FIXME select relevant cols?
           )
         })
       scenario$list = scenario_list
@@ -1053,11 +1056,11 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
   ## Assignments
   
   assignment = reactiveValues(
-    current = 'default',
+    current = 'aktuell',
     editing = FALSE,
     list = list(
-      list(name='default', assignment=units@data %>% select(unit_id, entity_id, locked)),
-      list(name='alternative', assignment=units@data %>% select(unit_id, entity_id, locked))
+      list(name='aktuell', assignment=units@data %>% select(unit_id, entity_id, locked)),
+      list(name='neu', assignment=units@data %>% select(unit_id, entity_id, locked))
     )
   )
   
