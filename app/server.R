@@ -1,248 +1,20 @@
 source('deps.R')
-source('ga.R')
-source('io.R')
+source('ga.R', local=T)
+source('io.R', local=T)
+source('logging.R', local=T)
+source('vars.R', local=T)
 
 plan(multiprocess)
 
-options(shiny.autoreload=T)
-options(shiny.host="0.0.0.0")
-options(warn=-1)
-
-flog.threshold(DEBUG)
-OPTIMIZATION_LOG_FILE = Sys.getenv('OPTIMIZATION_LOG_FILE')
-DEBUG_ENV = Sys.getenv('DEBUG') != ""
-if (OPTIMIZATION_LOG_FILE != "") {
-  flog.appender(appender.file('optimization.log'), name='optimization')
-}
-flog.debug('Logging setup complete')
-
-NONE_SELECTED = '__NONE_SELECTED__'
-NO_ASSIGNMENT = NONE_SELECTED
-
-MIN_UTILIZATION = 0.9
-MAX_UTILIZATION = 1.1
-
-# Load data
-units = readOGR('data/units.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
-entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
-weights = read_csv('data/weights.csv')
-adjacency = read_csv('data/adjacency.csv', col_types ='cc')
-
-addresses = readOGR('data/addresses.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
-
-# Add coordinates to adjacency data frame - just for debugging / visualization
-row.names(units) = units$unit_id
-adjacency = adjacency %>%
-  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(from_long=V1, from_lat=V2) %>% mutate(from=rownames(.))) %>%
-  inner_join(units %>% coordinates() %>% as.data.frame() %>% rename(to_long=V1, to_lat=V2) %>% mutate(to=rownames(.)))
-
-assignment = units@data %>%
-  select(unit_id) %>%
-  left_join(read_csv('data/assignment.csv'), by='unit_id') %>%
-  mutate(entity_id = ifelse(is.na(entity_id), NO_ASSIGNMENT, entity_id))
-
-units = units %>% sp::merge(assignment)
-
-entities_df = entities %>% as.data.frame()
-
-rm(assignment)
-
-bez = readOGR('data/RBS_OD_BEZ_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE) %>% subset(BEZ == '07')
-
-entity_ids = unique(entities$entity_id)
-unit_ids = unique(units$unit_id)
-optimizable_units = units %>% as.data.frame %>% filter(population > 0) %>% inner_join(weights, by='unit_id') %>% .$unit_id %>% unique
-population_range = range(units$population, na.rm = T, finite = T)
-
-flog.debug('Data loading complete')
-
-### Helper functions
-
-percent <- function(x, digits = 2, format = "f", ...) {
-  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
-}
-
-# preferrably sample blocks closer to the school
-# should be higher for smaller numbers
-distance_sample_weights = unit_ids %>% map(function(unit_id) {
-  idx = weights$unit_id == unit_id
-  avg = as.double(weights[idx,]$avg)
-  entity_ids = weights[idx,]$entity_id
-  # TODO make function and divide exponent by optimization step
-  weights = (1-(avg-min(avg))/max(avg-min(avg)))^3
-  set_names(weights, entity_ids)
-}) %>% set_names(unit_ids)
-
-distance_sample_probs = function(unit_id, heuristic_exponent=3) {
-  weights = distance_sample_weights[[unit_id]]
-  pot_weights = weights^heuristic_exponent
-  pot_weights/sum(pot_weights)
-}
-
-unit_index = set_names(1:length(units$unit_id), units$unit_id)
-
-entities$selected = F
-# Remark: There is no entities$updated because they have to be redrawn anyway
-entities$highlighted = T # highlight when selected
-entities$hovered = F
-units$selected = F # selected units can be reassigned, locked, etc
-units$highlighted = T # highlight units when assigned entity is selected
-units$locked = F
-units$updated = T # only updated unites need to be redrawn (true for initial render)
-units$hovered = F
-
-# Scales
-# cfac = colorFactor(rainbow(length(entity_ids)), levels=sample(entity_ids))
-colors = brewer.pal(8, 'Set1') # show_col(brewer.pal(9,'Set1'))
-valid_colors = colors[2:8]
-warning_color =  colors[1]
-entity_ids_color = c(
-  "07G16", "07G02", "07G01", "07G21", "07G14", "07G07", "07G15", "07G03", "07G13", "07G12", "07G10", "07G17", "07G06", "07G18",
-  "07G19", "07G24", "07G05", "07G22", "07G23", "07G25", "07G20", "07G36", "07G27", "07G37", "07G35", "07G30", "07G28", "07G32",
-  "07G29", "07G34", "07G26", "07G31"
-)
-palette = rep(valid_colors, length(entity_ids_color)/length(valid_colors)+1)[1:length(entity_ids_color)]
-cfac = colorFactor(palette, levels=entity_ids_color)
-entity_colors = function(entity_id, desaturate = FALSE) {
-  color = cfac(entity_id)
-  ifelse(desaturate, desat(color, 0.3), color)
-}
-
-desat <- function(cols, sat=0.5) {
-  X <- diag(c(1, sat, 1)) %*% rgb2hsv(col2rgb(cols))
-  hsv(X[1,], X[2,], X[3,])
-}
-
-# Colors for Report
-
-color_vec = c(palette, warning_color)
-names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
-
-### UI
-ui <- fillPage(
-  shinyStore::initStore("store", "shinyStore-ize1"),
-  shinyjs::useShinyjs(),
-  tags$head(
-    tags$link(rel="shortcut icon", href="http://idalab.de/favicon.ico"),
-    tags$title(HTML("idalab - intelligent zoning engine")),
-    tags$link(rel = "stylesheet", type = "text/css", href = "styles.css"),
-    # colors for table and map
-    tags$style(HTML(
-      do.call(paste0, map2(entity_ids_color, cfac(entity_ids_color),
-                           ~ paste0(
-                              "#map .entity-color-", .x, " {color:", .y, " !important;}\n",
-                              "#map .entity-bg-", .x, " {background-color:", .y, " !important;}\n",
-                              "#map .entity-", .x, " {fill:", .y,";}\n",
-                              "#map .unit.unit-assigned-to-entity-", .x, " {fill:", .y,";}\n"
-                              )))
-      ))
-  ),
-  # stripes pattern
-  div(
-    id='svg-patterns',
-    HTML('<svg height="5" width="5" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="locked-pattern" patternUnits="userSpaceOnUse" width="5" height="5"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cGF0aCBkPSJNMCA1TDUgMFpNNiA0TDQgNlpNLTEgMUwxIC0xWiIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+" x="0" y="0" width="5" height="5"> </image> </pattern> </defs> </svg>'),
-    HTML('<svg height="10" width="10" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="diagonal-stripe-1" patternUnits="userSpaceOnUse" width="10" height="10"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+CiAgPHJlY3Qgd2lkdGg9JzEwJyBoZWlnaHQ9JzEwJyBmaWxsPSd3aGl0ZScvPgogIDxwYXRoIGQ9J00tMSwxIGwyLC0yCiAgICAgICAgICAgTTAsMTAgbDEwLC0xMAogICAgICAgICAgIE05LDExIGwyLC0yJyBzdHJva2U9J2JsYWNrJyBzdHJva2Utd2lkdGg9JzEnLz4KPC9zdmc+Cg==" x="0" y="0" width="10" height="10"> </image> </pattern> </defs> </svg>'),
-    HTML('<svg height="8" width="8" xmlns="http://www.w3.org/2000/svg" version="1.1"> <defs> <pattern id="crosshatch" patternUnits="userSpaceOnUse" width="8" height="8"> <image xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4JyBoZWlnaHQ9JzgnPgogIDxyZWN0IHdpZHRoPSc4JyBoZWlnaHQ9JzgnIGZpbGw9JyNmZmYnLz4KICA8cGF0aCBkPSdNMCAwTDggOFpNOCAwTDAgOFonIHN0cm9rZS13aWR0aD0nMC41JyBzdHJva2U9JyNhYWEnLz4KPC9zdmc+Cg==" x="0" y="0" width="8" height="8"> </image> </pattern> </defs> </svg>'),
-    HTML('<svg version="1.1"
-     baseProfile="full"
-         xmlns="http://www.w3.org/2000/svg">
-        <filter id="desaturate">
-        <feColorMatrix id="matrix" type="matrix" values=".4  .3  .3   0   0
-                                             .3  .4  .3   0   0
-                                             .3  .3  .4   0   0
-                                              0   0   0   1   0 "/>
-         </filter>
-         </svg>')
-  ),
-  fillRow(
-    div(
-      id='map-panel',
-      leafletOutput("map", width="100%", height='100%'),
-      div(id="map-controls",
-          checkboxInput("show_utilization", "Auslastung anzeigen", value = TRUE),
-          checkboxInput("show_population", "Population anzeigen", value = FALSE)
-          ),
-      tabsetPanel(type="tabs", id="tabs",
-                  tabPanel("Details", div(id='detail',
-                      fillRow(
-                        div(id='detail--entity',
-                            h5('Schule:'),
-                            h4(id='detail--entity--selected-school', uiOutput('selected_entity')),
-                            div(id='detail--entity--controls',
-                                actionButton('deselect_entity', '', icon=icon('remove'))
-                            ),
-                            tableOutput('selected_entity_table')
-                        ),
-                        div(id='detail--units',
-                            h5('Blöcke:'),
-                            h4(id='detail--units--selected-units', uiOutput('selected_units')),
-                            div(id='detail--units--controls',
-                                actionButton('deselect_units', '', icon=icon('remove')),
-                                actionButton('assign_units', '', icon=tags$i(class='icon-link-unit')),
-                                actionButton('deassign_units', '', icon=tags$i(class='icon-unlink-unit')),
-                                actionButton('lock_units', '', icon=icon('lock')),
-                                actionButton('unlock_units', '', icon=icon('unlock'))
-                            ),
-                            tableOutput('selected_units_table')
-                        )
-                      )
-                      # TODO move buttons into UI outputs
-                  )),
-                  tabPanel("Import/Export", div(id='io',
-                      downloadButton('report', 'Report'),
-                      downloadButton('addresses', 'Adressliste'),
-                      downloadButton('serveAddresses', 'Adressliste als CSV'),
-                      downloadButton('serveGeoJSON', 'GeoJSON'),
-                      downloadButton('serveAssignment', 'Zuordnung Herunterladen'),
-                      fileInput('readAssignment', 'Zuordnung Hochladen',
-                                accept = c('text/csv',
-                                           'text/comma-separated-values',
-                                           'text/plain',
-                                           '.csv')
-                                ),
-                      actionButton('reset_assignment', 'Reset', icon=icon('fast-backward'))
-                  )),
-                  tabPanel("Optimierung", div(id='optimize-panel',
-                      uiOutput('optimize_button', inline = TRUE),
-                      plotOutput('fitness', height = '120px')
-                  )),
-                  tabPanel("Über das Projekt", div(id='about',
-                    includeMarkdown("about.md")
-                  ))
-      )
-    ),
-    div(
-      id='table-panel',
-      DT::dataTableOutput("table")
-    )
-  ),
-  singleton(
-    tags$head(tags$script(src = "lodash.min.js"))
-  ),
-  singleton(
-    tags$head(
-      tags$script(src = "https://d3js.org/d3-array.v1.min.js"),
-      tags$script(src = "https://d3js.org/d3-collection.v1.min.js"),
-      tags$script(src = "https://d3js.org/d3-color.v1.min.js"),
-      tags$script(src = "https://d3js.org/d3-format.v1.min.js"),
-      tags$script(src = "https://d3js.org/d3-interpolate.v1.min.js"),
-      tags$script(src = "https://d3js.org/d3-scale.v1.min.js")
-    )
-  ),
-  singleton(
-    tags$head(tags$script(src = "message-handler.js"))  
-  )
-)
-
-### Server
-server <- function(input, output, session) {
-
+function(input, output, session) {
+  
   ### Reactive Values
-
+  
   r = reactiveValues(
-    units=units, entities=entities,
+    units=units,
+    entities=entities,
     assignment_rev=0, # assignment revision - indicator that a block was reassigned manually
-    map_rev=0, # assignment revision - indicator that the map needs an update
+    map_rev=0, # map revision - indicator that the map needs an update
     selected_entity=NONE_SELECTED,
     previous_selected_entity=NONE_SELECTED,
     selected_entity_index=NULL, # only one can be selected
@@ -256,7 +28,9 @@ server <- function(input, output, session) {
   ga = reactiveValues(
     population_future=future(NULL),
     population=NULL
-    )
+  )
+  
+  ### TODO check for logged in user here!
 
   mapNeedsUpdate = function() {
     r$map_rev = r$map_rev + 1
@@ -287,6 +61,9 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'updated'] = T
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+    flog.debug('Updating assignment %s', assignment$list[[currentAssignmentIndex()]]$name)
   })
 
   observeEvent(input$deassign_units, {
@@ -296,6 +73,9 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'updated'] = T
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+    flog.debug('Updating assignment %s', assignment$list[[currentAssignmentIndex()]]$name)
   })
 
   observeEvent(input$deselect_units, {
@@ -311,6 +91,8 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'updated'] = T
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
   })
 
   observeEvent(input$unlock_units, {
@@ -319,6 +101,8 @@ server <- function(input, output, session) {
     r$units[r$units$selected, 'updated'] = T
     tableNeedsUpdate()
     reset_optimization(r$units)
+    # TODO separate update function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
   })
 
   observeEvent(input$deselect_entity, {
@@ -336,7 +120,7 @@ server <- function(input, output, session) {
   observe({
     shinyjs::toggleClass("map-panel", "show-population", input$show_population)
   })
-  
+
   observeEvent(input$show_population, {
     r$units$updated = T
     mapNeedsUpdate()
@@ -350,50 +134,6 @@ server <- function(input, output, session) {
 
   observe({
     shinyjs::toggleClass('map-panel', 'units-selected', sum(r$units$selected) > 0)
-  })
-
-  ### Localstorage of assignment
-
-  observeEvent(input$reset_assignment, {
-    shinyStore::updateStore(session, "assignment", NULL)
-    r$units = units
-    tableNeedsUpdate()
-  })
-
-  observeEvent(r$assignment_rev, {
-    if (r$assignment_rev == 0) {
-      try(isolate({
-        assignment = input$store$assignment %>% charToRaw %>% unserialize
-        stopifnot(c('unit_id', 'entity_id', 'locked') %in% colnames(assignment))
-        assignemnt = r$units %>% as.data.frame() %>% select(unit_id) %>% left_join(assignment)
-        r$units$entity_id = ifelse(is.na(assignment$entity_id), r$units$entity_id, assignment$entity_id)
-        r$units$locked = ifelse(is.na(assignment$locked), r$units$locked, assignment$locked)
-      }))
-    }
-    shinyStore::updateStore(session, "assignment", r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked) %>% serialize(NULL, ascii=T) %>% rawToChar)
-  })
-
-  ### load assignment
-
-  observeEvent(input$readAssignment, {
-    flog.debug('upload button pressed')
-    num_warn = length(warnings())
-    upload = read_csv(input$readAssignment$datapath)
-    num_warn = length(warnings()) - num_warn
-    validate(
-      need(num_warn == 0,
-           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
-      # need(),  # all unit_ids must be valid
-      # need()  # all entity_ids must be valid
-    )
-    prev_entities = r$units$entity_id
-    new_entities = r$units %>%
-      as.data.frame() %>%
-      select(unit_id) %>%
-      left_join(upload, by="unit_id") %>% .$entity_id
-    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
-    r$units$updated = TRUE
-    tableNeedsUpdate()
   })
 
   # unit mouseover -> highlight the shape
@@ -444,7 +184,7 @@ server <- function(input, output, session) {
         clicked_marker = sub('entity_', '', input$map_marker_click$id)
         r$previous_selected_entity = r$selected_entity
         r$selected_entity = ifelse(clicked_marker == r$selected_entity, NONE_SELECTED, clicked_marker)
-        index = entities$entity_id %>% detect_index(~ .x == r$selected_entity)
+        index = r$entities$entity_id %>% detect_index(~ .x == r$selected_entity)
         if (is.null(index) | index == 0) r$selected_entity_index = NULL else r$selected_entity_index = index
       }
     })
@@ -458,7 +198,7 @@ server <- function(input, output, session) {
     flog.debug('row %s clicked', row)
     isolate({
       r$selected_entity_index = row
-      r$selected_entity = ifelse(is.null(row), NONE_SELECTED, entities$entity_id[row])
+      r$selected_entity = ifelse(is.null(row), NONE_SELECTED, r$entities$entity_id[row])
     })
     # this will trigger an update of the r$selected_entity watcher where $updated and $highlighted are calculated
   })
@@ -511,8 +251,8 @@ server <- function(input, output, session) {
         mutate(c=paste0(
           'population',
           10+10*as.integer(10*0.9*(population-min(population, na.rm=T))/(max(population, na.rm=T)-min(population, na.rm=T)))
-          )) %>% .$c
-      
+        )) %>% .$c
+
       map = map %>%
         # redraw updated selected units
         addPolygons(
@@ -537,7 +277,7 @@ server <- function(input, output, session) {
             className=~paste(
               'unit_meta',
               paste0('unit-', unit_id)
-              ))
+            ))
         )
     }
     # entities
@@ -584,7 +324,7 @@ server <- function(input, output, session) {
       )
     return(map)
   }
-  
+
   updateMapJS = function() {
     utilization = entities_df %>%
       left_join(r$units %>% as.data.frame() %>% group_by(entity_id) %>% summarise(pop=sum(population)), by='entity_id') %>%
@@ -604,7 +344,7 @@ server <- function(input, output, session) {
     )
     session$onFlushed(function() { # run after leaflet
       session$sendCustomMessage(type = 'updateMap',
-                                message = message)      
+                                message = message)
     }, once=TRUE)
   }
 
@@ -617,7 +357,7 @@ server <- function(input, output, session) {
         updateMap(r$units, input$show_population)
       # initial caching of map markers
       session$onFlushed(function() { # run after leaflet
-        session$sendCustomMessage(type = 'getMapLayers', message=list())      
+        session$sendCustomMessage(type = 'getMapLayers', message=list())
       }, once=TRUE)
       updateMapJS()
       r$units$updated = F
@@ -707,6 +447,9 @@ server <- function(input, output, session) {
             left_join(solution$solution, by="unit_id") %>% .$entity_id
           r$units$entity_id = ifelse(is.na(new_entities), prev_entities, new_entities)
           r$units$updated = r$units$updated | r$units$entity_id != prev_entities
+          
+          # TODO separate update function
+          assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
 
           tableNeedsUpdate()
 
@@ -791,7 +534,7 @@ server <- function(input, output, session) {
     # preferrably select schools closer to the block
     mutations = mutation_units %>% map(
       ~ sample(names(distance_sample_probs(.x, heuristic_exponent)), 1, replace=T, prob=distance_sample_probs(.x, heuristic_exponent))
-      )
+    )
     individual[mutation_idx, 'entity_id'] = unlist(mutations)
     individual
   }
@@ -838,15 +581,15 @@ server <- function(input, output, session) {
     connected_components = igraph::count_components(igraph::graph_from_data_frame(filtered_edges, directed = F, vertices = optimizable_units))
     coherence_cost = connected_components/optimum_connected_components
 
-    individual %>% inner_join(units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
+    individual %>% inner_join(r$units %>% as.data.frame %>% select(unit_id, population), by='unit_id') %>% # FIXME faster?
       inner_join(weights, by=c('unit_id', 'entity_id')) %>%
       group_by(entity_id) %>%
       summarise(
         avg=sum(avg*population)/sum(population), # population weighted mean
         max=max(max), # per catchment area look at maximum distance
         population=sum(population)
-        ) %>%
-      inner_join(entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
+      ) %>%
+      inner_join(r$entities %>% as.data.frame %>% select(entity_id, capacity), by='entity_id') %>% # FIXME faster?
       rowwise() %>% mutate(over_capacity=max(1, population-capacity), under_capacity=max(1, capacity-population)) %>% ungroup %>%
       mutate(over_capacity_penalty=(over_capacity*OVER_CAPACITY_PENALTY)^2, under_capacity_penalty=(under_capacity*UNDER_CAPACITY_PENALTY)^2) %>%
       summarise(
@@ -854,13 +597,13 @@ server <- function(input, output, session) {
         max=mean(max^2), # squared average maximum distance
         over_capacity_penalty=mean(over_capacity_penalty),
         under_capacity_penalty=mean(under_capacity_penalty)
-        ) %>%
+      ) %>%
       mutate(
         avg = DIST_WEIGHT*avg,
         max = DIST_WEIGHT*max,
         over_capacity_penalty = OVER_CAPACITY_WEIGHT*over_capacity_penalty,
         under_capacity_penalty = UNDER_CAPACITY_WEIGHT*under_capacity_penalty
-        ) %>%
+      ) %>%
       (function(x) {
         if (verbose) {
           flog.debug('*** error components', name='optimization')
@@ -896,45 +639,45 @@ server <- function(input, output, session) {
         pop=sum(population, na.rm=T),
         sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
       ) %>%
-      left_join(entities %>% as.data.frame %>% select(entity_id, BZR, capacity), by='entity_id') %>%
+      left_join(r$entities %>% as.data.frame %>% select(entity_id, BZR, capacity), by='entity_id') %>%
       mutate(
         utilization=pop/capacity
       )
   })
 
   renamed_table_data = reactive({
-      d = reactive_table_data() %>%
-        select(
-          Schule=entity_id,
-          Kapazität=capacity,
-          Kinder=pop,
-          Auslastung=utilization,
-          `SGBII(u.65)`=sgbIIu65,
-          `Weg (Ø)`=avg_dist,
-          `Weg (max)`=max_dist,
-          BZR=BZR
-        )
+    d = reactive_table_data() %>%
+      select(
+        Schule=entity_id,
+        Kapazität=capacity,
+        Kinder=pop,
+        Auslastung=utilization,
+        `SGBII(u.65)`=sgbIIu65,
+        `Weg (Ø)`=avg_dist,
+        `Weg (max)`=max_dist,
+        BZR=BZR
+      )
   })
 
   ### Outputs
 
 
   rowCallback = DT::JS("function(row, data) {",
-  "if (data[4] < ", MIN_UTILIZATION, ") {",
-  "
-    $(row).addClass('under-capacity').removeClass('over-capacity').removeClass('capacity-ok');
-  } else if (data[4] > ", MAX_UTILIZATION, ") {
-    $(row).addClass('over-capacity').removeClass('under-capacity').removeClass('capacity-ok');
-  } else {
-    $(row).addClass('capacity-ok').removeClass('under-capacity').removeClass('over-capacity');
-  }
+                       "if (data[4] < ", MIN_UTILIZATION, ") {",
+                       "
+                       $(row).addClass('under-capacity').removeClass('over-capacity').removeClass('capacity-ok');
+} else if (data[4] > ", MAX_UTILIZATION, ") {
+                       $(row).addClass('over-capacity').removeClass('under-capacity').removeClass('capacity-ok');
+} else {
+                       $(row).addClass('capacity-ok').removeClass('under-capacity').removeClass('over-capacity');
+}
 
-  $('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ');
+$('td:eq(4)', row).prepend('<i class=\"glyphicon glyphicon-ok\"></i><i class=\"fa glyphicon glyphicon-remove\"></i> ');
 
-  $('td:eq(1)', row).append('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
-  $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
-  ",
-  "}")
+$('td:eq(1)', row).append('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
+$('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+data[1]+'\"></span>');
+",
+"}")
 
   # initial table render (see later observe for update)
   output$table = DT::renderDataTable({
@@ -998,8 +741,8 @@ server <- function(input, output, session) {
 
   output$selected_entity = renderUI({
     if (r$selected_entity != NONE_SELECTED) {
-      entity = entities@data %>% filter(entity_id == r$selected_entity)
-      HTML(paste0(r$selected_entity, '<span class="entity-color-indicator entity-bg-', r$selected_entity, '"></span>', entity$SCHULNAME))
+      entity = r$entities %>% as.data.frame() %>% filter(entity_id == r$selected_entity)
+      HTML(paste0(r$selected_entity, '<span class="entity-color-indicator entity-bg-', r$selected_entity, '"></span> ', entity$SCHULNAME))
     } else {
       HTML('Keine ausgewählt')
     }
@@ -1054,18 +797,6 @@ server <- function(input, output, session) {
 
   ### Export
 
-  output$serveAssignment = downloadHandler(
-    filename = function() {
-      paste0('assignment_', Sys.Date(), '.csv')
-    },
-    content = function(con) {
-      data = isolate(r$units) %>%
-        as.data.frame() %>%
-        select(unit_id, entity_id) %>%
-        filter(entity_id != NO_ASSIGNMENT)
-      write_csv(data, con)
-    })
-
   output$serveGeoJSON = downloadHandler(
     filename = function() {
       paste0('assignment_', Sys.Date(), '.geojson')
@@ -1084,12 +815,12 @@ server <- function(input, output, session) {
     content = function(con) {
       isolate({
         table = cbind(
-          as.data.frame(addresses),
-          over(addresses, r$units)
+          as.data.frame(addresses_add), # This is the address list with additions
+          over(addresses_add, r$units)
         ) %>% arrange(entity_id, street, no) %>%
           mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id)) %>%
           select(Straße=street, Hausnummer=no, Schule=entity_id)
-          
+
         write.csv( table, con)
       })
     }
@@ -1099,6 +830,7 @@ server <- function(input, output, session) {
     content = function(con) {
       temp_dir = tempdir()
       params = list(
+        assignment_name = assignment$current, # This is the address list without additions # FIXME might be off
         addresses = addresses,
         units = r$units,
         entities = r$entities,
@@ -1129,6 +861,8 @@ server <- function(input, output, session) {
         write_rds(berlin, map_path, compress = 'gz')
       }
       params = list(
+        scenario_name = scenario$current,
+        assignment_name = assignment$current,
         map = berlin,
         addresses = addresses,
         units = r$units,
@@ -1149,6 +883,334 @@ server <- function(input, output, session) {
       )
     }
   )
+  
+  output$excel_report = downloadHandler(
+    filename = function() { paste0('report_', Sys.Date(), '.xlsx') },
+    content = function(con) {
+      temp_dir = tempdir()
+      # TODO DRY this (it's the same as reactive table)
+      # FIXME this needs to be the cross product of scenarios and assignments
+      expand.grid(scenario_idx=1:length(scenario$list), assignment_idx=1:length(assignment$list)) %>%
+        transpose %>%
+        reduce(function(acc, idx) {
+          sc = scenario$list[[idx$scenario_idx]]
+          ass = assignment$list[[idx$assignment_idx]]
+          df = sc$units %>%
+            inner_join(ass$assignment, by='unit_id') %>%
+            filter(entity_id != NO_ASSIGNMENT) %>%
+            left_join(weights, by=c('unit_id', 'entity_id')) %>%
+            group_by(entity_id) %>%
+            summarise(
+              num_units=n(),
+              min_dist=min(min, na.rm=T),
+              avg_dist=sum(population*avg, na.rm=T)/sum(population, na.rm=T), # population weighted mean
+              max_dist=max(max, na.rm=T),
+              pop=sum(population, na.rm=T),
+              sgbIIu65=sum(population*sgbIIu65, na.rm=T)/sum(population, na.rm=T) # FIXME population is only kids...
+            ) %>%
+            left_join(sc$entities, by='entity_id') %>%
+            mutate(
+              utilization=pop/capacity
+            ) %>%
+            select(
+              Schule=entity_id,
+              Schulname=SCHULNAME,
+              Kapazität=capacity,
+              Kinder=pop,
+              Auslastung=utilization,
+              `SGBII(u.65)`=sgbIIu65,
+              `Weg (Ø)`=avg_dist,
+              `Weg (max)`=max_dist
+            )
+  
+          acc[[paste(sc$name, ass$name)]] = df
+          acc
+        }, .init = list()) %>% write.xlsx(con)
+    }
+  )
+  
+  ## Scenarios
+  
+  scenario = reactiveValues(
+    current = '2017',
+    list = list(
+      list(name='2017', entities=entities@data %>% select(entity_id, SCHULNAME, capacity), units=units@data %>% select(unit_id, population, sgbIIu65)),
+      list(name='2018', entities=entities@data %>% select(entity_id, SCHULNAME, capacity), units=units@data %>% select(unit_id, population, sgbIIu65))
+    )
+  )
+  
+  currentScenario = reactive({
+    scenario$list %>% detect(~ .$name == scenario$current)
+  })
+  
+  observe({
+    req(input$currentScenario %in% (scenario$list %>% map('name')))
+    scenario$current = input$currentScenario
+  })
+  
+  output$scenarioSelect = renderUI({
+    selectizeInput('currentScenario', 'Szenario', map(scenario$list, ~ .$name), selected = scenario$current)
+  })
+  
+  # activate scenario from list
+  observeEvent(scenario$current, {
+    req(currentScenario(), currentScenario()$entities, currentScenario()$units)
+    flog.debug('Switched to scenario %s', scenario$current)
+    flog.debug('currentScenario()$name == %s', currentScenario()$name)
+    # update units
+    new_units = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(currentScenario()$units, by="unit_id")
+    r$units$population = new_units$population
+    r$units$sgbIIu65 = new_units$sgbIIu65
+    r$units$updated = TRUE
+    # update entities
+    new_entities = r$entities %>%
+      as.data.frame() %>%
+      select(entity_id) %>%
+      left_join(currentScenario()$entities, by="entity_id")
+    r$entities$capacity = new_entities$capacity
+    # FIXME do I need this?
+    # r$entities$updated = TRUE
+    
+    tableNeedsUpdate()
+  })
+  
+  # download scenarios
+  output$serveScenarios = downloadHandler(
+    filename = function() {
+      paste0('scenarios_', Sys.Date(), '.xlsx')
+    },
+    content = function(con) {
+      scenario$list %>% reduce(function(acc, sc) {
+        acc[[paste('entities', sc$name)]] = sc$entities
+        acc[[paste('units', sc$name)]] = sc$units
+        acc
+      }, .init = list()) %>% write.xlsx(con)
+    }
+  )
+  
+  # upload scenarios
+  observeEvent(input$readScenarios, {
+    try({
+      flog.debug('reading scenarios')
+      num_warn = length(warnings())
+      
+      data = getSheetNames(input$readScenarios$datapath) %>%
+        set_names() %>%
+        map(read_xlsx, path = input$readScenarios$datapath)
+      scenario_list = names(data) %>% grep('units', ., value=T) %>%
+        map(function(sheet_name) {
+          scenario_name = substring(sheet_name, 7)
+          list(
+            name = scenario_name,
+            units = data[[paste('units', scenario_name)]], # FIXME select relevant cols?
+            entities = data[[paste('entities', scenario_name)]] # FIXME select relevant cols?
+          )
+        })
+      scenario$list = scenario_list
+      scenario$current = scenario_list[[1]]$name
+      
+      num_warn = length(warnings()) - num_warn
+      validate(
+        need(num_warn == 0,
+             sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+        # need(),  # all unit_ids must be valid
+        # need()  # all entity_ids must be valid
+      )
+      # chache in localstorage
+      shinyStore::updateStore(session, "scenario", scenario %>% reactiveValuesToList() %>% serialize(NULL, ascii=T) %>% rawToChar)
+      
+      # FIXME this is duplicate
+      
+      # update units
+      new_units = r$units %>%
+        as.data.frame() %>%
+        select(unit_id) %>%
+        left_join(currentScenario()$units, by="unit_id")
+      r$units$population = new_units$population
+      r$units$sgbIIu65 = new_units$sgbIIu65
+      r$units$updated = TRUE
+      # update entities
+      new_entities = r$entities %>%
+        as.data.frame() %>%
+        select(entity_id) %>%
+        left_join(currentScenario()$entities, by="entity_id")
+      r$entities$capacity = new_entities$capacity
+      # FIXME do I need this?
+      # r$entities$updated = TRUE
+      
+      tableNeedsUpdate()
+    })
+  })
+  
+  # load scenarios from localstorage
+  observeEvent(input$store$scenario, {
+    scenario_from_store = input$store$scenario %>% charToRaw %>% unserialize
+    stopifnot(c('current', 'list') %in% names(scenario_from_store))
+    scenario$current = scenario_from_store$current
+    scenario$list = scenario_from_store$list
+  }, once = TRUE)
+  
+  ## Assignments
+  
+  assignment = reactiveValues(
+    current = 'aktuell',
+    editing = FALSE,
+    list = list(
+      list(name='aktuell', assignment=units@data %>% select(unit_id, entity_id, locked)),
+      list(name='neu', assignment=units@data %>% select(unit_id, entity_id, locked))
+    )
+  )
+  
+  currentAssignmentIndex = reactive({
+    assignment$list %>% detect_index(~ .$name == assignment$current)
+  })
+  
+  currentAssignment = reactive({
+    assignment$list[[currentAssignmentIndex()]]
+  })
+  
+  observe({
+    req(input$currentAssignment %in% (assignment$list %>% map('name')))
+    flog.debug('Setting current assignment from select')
+    assignment$current = input$currentAssignment
+  })
+  
+  output$assignmentSelect = renderUI({
+    selectizeInput('currentAssignment', 'Zuordnung', map(assignment$list, ~ .$name), selected = assignment$current)
+  })
+  
+  observeEvent(input$copyAssignment, {
+    new_name = next_unique_name(assignment$current, assignment$list %>% map('name'))
+    new_assignment = list(name=new_name, assignment=cbind(assignment$list[[currentAssignmentIndex()]]$assignment)) # FIXME how to properly copy?
+    assignment$list[[length(assignment$list)+1]] = new_assignment
+    # assignment$current = new_assignment$name
+    updateSelectizeInput(session, 'currentAssignment', selected = new_assignment$name)
+  })
+  
+  observeEvent(input$removeAssignment, {
+    req(length(assignment$list) > 1)
+    showModal(modalDialog(
+      title = "Zuordnung entfernen",
+      "Sind Sie sicher?",
+      easyClose = TRUE,
+      footer = tagList(
+        modalButton("Abbrechen"),
+        actionButton('removeAssignmentConfirm', 'Löschen', icon=icon('trash'), class='btn-danger')
+      )
+    ))
+  })
+  
+  observeEvent(input$removeAssignmentConfirm, {
+    removeModal()
+    req(length(assignment$list) > 1)
+    assignment$list = assignment$list %>% discard(~ .x$name == assignment$current)
+    assignment$current = assignment$list[[1]]$name
+  })
+  
+  observeEvent(input$editAssignmentName, {
+    if (assignment$editing && isTruthy(input$newAssignmentName) && !(input$newAssignmentName %in% map(assignment$list, 'name'))) {
+      new_name = trimws(input$newAssignmentName)
+      assignment$list[[currentAssignmentIndex()]]$name = new_name
+      assignment$current = new_name
+    }
+    assignment$editing = !assignment$editing
+  })
+  
+  output$renameAssignment = renderUI({
+    tagList(
+      div(textInput('newAssignmentName', NULL, value=assignment$current), style=ifelse(assignment$editing, 'display:inline-block', 'display:none')),
+      actionButton('editAssignmentName', '', icon = icon(ifelse(assignment$editing, 'save', 'edit')))
+    )
+  })
+  
+  # activate assigment from list
+  observeEvent(assignment$current, {
+    req(currentAssignment())
+    req(currentAssignment()$assignment)
+    flog.debug('Switched to assignment %s', assignment$current)
+    flog.debug('currentAssignment()$name == %s', currentAssignment()$name)
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(currentAssignment()$assignment, by="unit_id")
+    r$units$entity_id = ifelse(is.na(new_entities$entity_id), NONE_SELECTED, new_entities$entity_id)
+    r$units$locked = ifelse(is.na(new_entities$locked), FALSE, new_entities$locked)
+    r$units$updated = TRUE
+    tableNeedsUpdate()
+  })
+  
+  # load assignment from upload
+  observeEvent(input$readAssignment, {
+    flog.debug('upload button pressed')
+    num_warn = length(warnings())
+    upload = read_csv(input$readAssignment$datapath)
+    num_warn = length(warnings()) - num_warn
+    validate(
+      need(num_warn == 0,
+           sprintf("Es gab %d Problem(e) mit der Datei.", num_warn))
+      # need(),  # all unit_ids must be valid
+      # need()  # all entity_ids must be valid
+    )
+    new_entities = r$units %>%
+      as.data.frame() %>%
+      select(unit_id) %>%
+      left_join(upload, by="unit_id") %>% .$entity_id
+    r$units$entity_id = ifelse(is.na(new_entities), NONE_SELECTED, new_entities)
+    r$units$updated = TRUE
+    # TODO wrap in function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+    tableNeedsUpdate()
+  })
+  
+  # download assignments
+  output$serveAssignment = downloadHandler(
+    filename = function() {
+      paste0('assignment_', Sys.Date(), '.csv')
+    },
+    content = function(con) {
+      data = isolate(r$units) %>%
+        as.data.frame() %>%
+        select(unit_id, entity_id) %>%
+        filter(entity_id != NO_ASSIGNMENT)
+      write_csv(data, con)
+    }
+  )
+  
+  # reset current assignment TODO remove (just for debugging)
+  observeEvent(input$reset_assignment, {
+    shinyStore::updateStore(session, "assignment", NULL)
+    r$units = units
+    tableNeedsUpdate()
+    # TODO wrap in function
+    assignment$list[[currentAssignmentIndex()]]$assignment = r$units %>% as.data.frame() %>% select(unit_id, entity_id, locked)
+  })
+  
+  # Initial loading from localstorage
+  observeEvent(input$store$assignment, {
+    try({
+      assignment_from_store = input$store$assignment %>% charToRaw %>% unserialize
+      stopifnot(c('current', 'list') %in% names(assignment_from_store))
+      assignment$current = assignment_from_store$current
+      assignment$list = assignment_from_store$list
+      # TODO this should not be necessary!
+      new_entities = r$units %>%
+        as.data.frame() %>%
+        select(unit_id) %>%
+        left_join(currentAssignment()$assignment, by="unit_id")
+      r$units$entity_id = ifelse(is.na(new_entities$entity_id), NONE_SELECTED, new_entities$entity_id)
+      r$units$locked = ifelse(is.na(new_entities$locked), FALSE, new_entities$locked)
+      r$units$updated = TRUE
+      #tableNeedsUpdate()
+    })
+  }, once = TRUE)
+  
+  # Save to localstorage on changes
+  observeEvent(r$assignment_rev, {
+    # TODO change to "save_data" function
+    shinyStore::updateStore(session, "assignment", assignment %>% reactiveValuesToList() %>% serialize(NULL, ascii=T) %>% rawToChar)
+  }, ignoreInit = TRUE)
+  
 }
-
-shinyApp(ui, server)

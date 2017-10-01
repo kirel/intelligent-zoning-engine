@@ -63,14 +63,14 @@
       return Math.abs(1 - x);
     }))).range([5, 8]);
     return _.zip(message.entities.entity_id, message.entities.utilization).forEach(applied(function(entity_id, utilization) {
-      var entity;
+      var entity, ref;
       entity = cached_selector('.entity-' + entity_id);
       entity.toggleClass('deselected', message.selected_entity !== '__NONE_SELECTED__' && entity_id !== message.selected_entity);
       cached_selector('.entity-meta.entity-' + entity_id).toggleClass('over-capacity', utilization > 1).toggleClass('under-capacity', utilization < 1);
       if (window.mapLayers['entity_meta_' + entity_id] == null) {
         getMapLayers();
       }
-      return window.mapLayers['entity_meta_' + entity_id].setRadius(scale(utilization));
+      return (ref = window.mapLayers['entity_meta_' + entity_id]) != null ? ref.setRadius(scale(utilization)) : void 0;
     }));
   };
 
@@ -83,3 +83,5 @@
   });
 
 }).call(this);
+
+//# sourceMappingURL=message-handler.js.map

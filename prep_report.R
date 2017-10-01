@@ -74,6 +74,8 @@ names(color_vec) = c(entity_ids_color, NO_ASSIGNMENT)
 rmarkdown::render(
   file.path("app", "templates", "assignment_report_de.Rmd"),
   params = list(
+    scenario_name = 'Testscenario',
+    assignment_name = 'Testzuordnung',
     map = berlin,
     addresses = addresses,
     units = units,

@@ -53,6 +53,7 @@ blk = readOGR('download/RBS_OD_BLK_2015_12.geojson', layer = 'OGRGeoJSON', strin
 lor = readOGR('download/RBS_OD_LOR_2015_12.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 re_schulstand = readOGR('download/re_schulstand.geojson', layer = 'OGRGeoJSON', stringsAsFactors = FALSE)
 HKO_2015 = readOGR('output/HKO_2015.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+RBS_OD_ADR_2016_12 = readOGR('output/RBS_OD_ADR_2016_12.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
 ```
 
 ### Schulwege
@@ -523,6 +524,16 @@ addresses_in_bez = HKO_2015[!is.na(over(HKO_2015, subset(blk, BEZ == bez_id))$BE
 names(addresses_in_bez) = c('street', 'no')
 addresses_in_bez@data
 
-file.remove('app/data/addresses.geojson')
-writeOGR(addresses_in_bez, "app/data/addresses.geojson", layer="addresses", driver="GeoJSON", check_exists = FALSE)
+file.remove('app/data/addresses.rds')
+write_rds(addresses_in_bez, 'app/data/addresses.rds')
 ```
+
+```{r}
+addresses_add_in_bez = RBS_OD_ADR_2016_12[RBS_OD_ADR_2016_12$BEZ == bez_id, c('STRNAME', 'HSNR')]
+names(addresses_add_in_bez) = c('street', 'no')
+addresses_add_in_bez@data
+
+file.remove('app/data/addresses_add.rds')
+write_rds(addresses_add_in_bez, 'app/data/addresses_add.rds')
+```
+

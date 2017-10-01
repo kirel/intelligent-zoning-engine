@@ -2,6 +2,32 @@ body {
   min-width: 1200px;
 }
 
+/*** title ***/
+
+#title-panel {
+  background: white;
+}
+
+#title-panel > * {
+  display: inline-block;
+  vertical-align: top;
+  white-space: normal;
+}
+
+#manage-assignments > label {
+  width: 100%;
+}
+
+#renameAssignment {
+  display: inline-block;
+}
+
+#renameAssignment .form-group {
+  margin: 0;
+  width: 200px;
+}
+
+
 /*** Map ***/
 
 #map-panel {
@@ -70,7 +96,7 @@ body {
 .show-population #map .unit.populationNA { fill-opacity: 0; }
 
 /* see http://iros.github.io/patternfills/sample_css.html */
-#svg-patterns { position: absolute; }
+#svg-patterns { position: absolute; left: -9999px; top: -9999px; }
 #map .unit_meta.unlocked {
   fill: transparent;
 }
@@ -105,6 +131,7 @@ body {
   height: 100%; overflow: scroll;
   background-color:lightgrey;
   border-spacing:10px;
+  z-index: -999;
 }
 
 #table-panel th {
@@ -533,4 +560,3 @@ body {
 .icon-link-unit:before {
   content: "\e901";
 }
->>>>>>> master

@@ -1,7 +1,7 @@
 ---
 title: "Schule-Block-Zuordnung"
-author: "idalab GmbH"
-date: '`r format(Sys.time(), "%B %d, %Y")`'
+author: '`r params$assignment_name`'
+date: '`r format(Sys.time(), "%e\\. %B %Y")`'
 output:
   pdf_document: default
   html_document: default
@@ -11,6 +11,7 @@ header-includes:
 - \usepackage{longtable}
 - \definecolor{BrewerRed}{HTML}{E41A1C}
 params:
+  assignment_name: NA
   NO_ASSIGNMENT: NA
   addresses: NA
   entities: NA

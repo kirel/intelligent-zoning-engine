@@ -2,9 +2,9 @@ library(dplyr)
 library(sp)
 library(readr)
 library(rgdal)
+library(stringr)
 
-addresses = read_delim("download/HKO_2015_EPSG5650.txt", ';', locale = locale(encoding = "latin1")) %>%
-  mutate(EEEEEEEE_EEE=1.0*EEEEEEEE_EEE/1000.0, NNNNNNN_NNN=1.0*NNNNNNN_NNN/1000.0) %>%
+addresses = read_delim("download/HKO_2015_EPSG5650.txt", ';', locale = locale(decimal_mark = ",", grouping_mark = '', encoding = "latin1")) %>%
   select(OI, STN, HNR, PLZ, EEEEEEEE_EEE, NNNNNNN_NNN) %>%
   distinct(STN, HNR, PLZ, .keep_all = TRUE) %>%
   as.data.frame()
