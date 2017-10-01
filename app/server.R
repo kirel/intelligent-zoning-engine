@@ -915,7 +915,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
               Kapazität=capacity,
               Kinder=pop,
               Auslastung=utilization,
-              #`SGBII(u.65)`=sgbIIu65,
+              `SGBII(u.65)`=sgbIIu65,
               `Weg (Ø)`=avg_dist,
               `Weg (max)`=max_dist
             )
