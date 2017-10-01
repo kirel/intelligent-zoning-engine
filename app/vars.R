@@ -9,7 +9,8 @@ entities = readOGR('data/entities.geojson', layer = 'OGRGeoJSON', stringsAsFacto
 weights = read_csv('data/weights.csv')
 adjacency = read_csv('data/adjacency.csv', col_types ='cc')
 
-addresses = readOGR('data/addresses.geojson', 'OGRGeoJSON', stringsAsFactors = FALSE)
+addresses = read_rds('data/addresses.rds')
+addresses_add = read_rds('data/addresses_add.rds')
 
 # Add coordinates to adjacency data frame - just for debugging / visualization
 row.names(units) = units$unit_id

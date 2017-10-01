@@ -815,8 +815,8 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     content = function(con) {
       isolate({
         table = cbind(
-          as.data.frame(addresses),
-          over(addresses, r$units)
+          as.data.frame(addresses_add), # This is the address list with additions
+          over(addresses_add, r$units)
         ) %>% arrange(entity_id, street, no) %>%
           mutate(entity_id=ifelse(entity_id == NO_ASSIGNMENT, 'Keine', entity_id)) %>%
           select(Straße=street, Hausnummer=no, Schule=entity_id)
@@ -830,7 +830,7 @@ $('td:eq(0)', row).prepend('<span class=\"entity-color-indicator entity-bg-'+dat
     content = function(con) {
       temp_dir = tempdir()
       params = list(
-        assignment_name = assignment$current,
+        assignment_name = assignment$current, # This is the address list without additions # FIXME might be off
         addresses = addresses,
         units = r$units,
         entities = r$entities,
