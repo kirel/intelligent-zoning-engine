@@ -13,7 +13,15 @@ download/HKO_2015_EPSG5650.txt:
 	unzip -o -d download download/HKO_EPSG5650.zip
 	rm download/HKO_EPSG5650.zip
 	touch $@
-adressen: download/HKO_2015_EPSG5650.txt
+
+download/RBS_OD_ADR_2016_12.csv:
+	mkdir -p download
+	wget https://www.statistik-berlin-brandenburg.de/opendata/RBS_OD_ADR_2016_12.zip -O download/RBS_OD_ADR_2016_12.zip
+	unzip -o -d download download/RBS_OD_ADR_2016_12.zip
+	rm download/RBS_OD_ADR_2016_12.zip
+	touch $@
+
+adressen: download/HKO_2015_EPSG5650.txt download/RBS_OD_ADR_2016_12.csv
 
 # http://daten.berlin.de/datensaetze/grundschuleinzugsbereiche-geometrien-berlin-2012-mit-demographischen-merkmalen
 download/ESB2012_WGS84_EWR2012-12.geojson:
@@ -116,6 +124,11 @@ output/HKO_2015.geojson: download/HKO_2015_EPSG5650.txt HKO_2015.R
 	rm -f $@
 	mkdir -p output
 	Rscript HKO_2015.R
+
+output/RBS_OD_ADR_2016_12.geojson: download/RBS_OD_ADR_2016_12.csv RBS_OD_ADR_2016_12.R
+	rm -f $@
+	mkdir -p output
+	Rscript RBS_OD_ADR_2016_12.R
 
 output/sampled_buildings.rds: output/HKO_2015.geojson download/re_alkis_tatsaechlichenutzungflaechen.geojson download/RBS_OD_BLK_2015_12.geojson buildings.R
 	rm -f $@
